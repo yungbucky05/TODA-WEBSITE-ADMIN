@@ -102,71 +102,55 @@ window.closeConfirmModal = function() {
 
 // Load pending discount applications
 function loadApplications() {
-  // FIXED: First get the list of pending application IDs
-  const pendingAppsRef = ref(db, 'pendingApplications');
+  console.log('[DiscountApplications] Starting to load applications...');
+  // SIMPLIFIED: Just scan all users for discount data that needs verification
+  const usersRef = ref(db, 'users');
   
-  onValue(pendingAppsRef, async (pendingSnapshot) => {
+  onValue(usersRef, (snapshot) => {
+    console.log('[DiscountApplications] Received users snapshot:', snapshot.exists());
     pendingApplications = [];
     
-    if (pendingSnapshot.exists()) {
-      const pendingIds = pendingSnapshot.val();
-      const pendingUserIds = Object.keys(pendingIds).filter(id => pendingIds[id] === true);
+    if (snapshot.exists()) {
+      const users = snapshot.val();
+      console.log('[DiscountApplications] Total users found:', Object.keys(users).length);
       
-      if (pendingUserIds.length === 0) {
-        updatePendingCount();
-        displayEmptyState();
-        return;
-      }
-      
-      // Now fetch user details for each pending application
-      const usersRef = ref(db, 'users');
-      onValue(usersRef, (usersSnapshot) => {
-        if (usersSnapshot.exists()) {
-          const users = usersSnapshot.val();
-          pendingApplications = [];
-          
-          pendingUserIds.forEach(userId => {
-            const user = users[userId];
-            if (user) {
-              // Extract discount application data
-              const discountData = user.discountApplication || {};
-              
-              pendingApplications.push({
-                userId: userId,
-                userName: user.fullName || user.name || 'Unknown',
-                userEmail: user.email || 'N/A',
-                userPhone: user.phoneNumber || user.phone || 'N/A',
-                discountType: discountData.discountType || user.discountType || 'N/A',
-                status: discountData.status || 'pending',
-                timestamp: discountData.timestamp || discountData.submittedAt || Date.now(),
-                documentURL: discountData.documentURL || user.discountDocumentURL || '',
-                idNumber: discountData.idNumber || user.discountIdNumber || '',
-                expiryDate: discountData.expiryDate || '',
-                remarks: discountData.remarks || '',
-                ...discountData
-              });
-            }
+      Object.keys(users).forEach(userId => {
+        const user = users[userId];
+        
+        // Check if user has discount data but NOT verified yet
+        // Look for users with discountType but discountVerified is false/missing
+        if (user && user.discountType && !user.discountVerified) {
+          console.log('[DiscountApplications] Found unverified discount:', userId, user.discountType);
+          pendingApplications.push({
+            userId: userId,
+            userName: user.name || user.fullName || 'Unknown',
+            userEmail: user.email || 'N/A',
+            userPhone: user.phoneNumber || user.phone || 'N/A',
+            discountType: user.discountType || 'N/A',
+            discountIdNumber: user.discountIdNumber || '',
+            discountIdImageUrl: user.discountIdImageUrl || '',
+            discountExpiryDate: user.discountExpiryDate || '',
+            timestamp: user.discountApplicationDate || user.lastActiveTime || Date.now(),
+            status: 'pending'
           });
-
-          // Sort by timestamp (newest first)
-          pendingApplications.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-          updatePendingCount();
-          displayApplications();
-        } else {
-          updatePendingCount();
-          displayEmptyState();
         }
-      }, (error) => {
-        console.error('Error loading user details:', error);
-        showMessage('Error loading user details: ' + error.message, 'error');
       });
-      
+
+      console.log('[DiscountApplications] Pending applications found:', pendingApplications.length);
+      console.log('[DiscountApplications] Applications data:', pendingApplications);
+
+      // Sort by timestamp (newest first)
+      pendingApplications.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      updatePendingCount();
+      displayApplications();
     } else {
+      console.log('[DiscountApplications] No users found in database');
       updatePendingCount();
       displayEmptyState();
     }
   }, (error) => {
+    console.error('[DiscountApplications] Error loading applications:', error);
     showMessage('Error loading applications: ' + error.message, 'error');
   });
 }
@@ -216,7 +200,7 @@ function displayApplications() {
             <span class="info-label">Phone:</span> ${app.userPhone}
           </div>
           <div class="info-item">
-            <span class="info-label">ID Number:</span> ${app.idNumber || 'N/A'}
+            <span class="info-label">ID Number:</span> ${app.discountIdNumber || 'N/A'}
           </div>
         </div>
       </div>
@@ -330,21 +314,24 @@ window.showApplicationDetails = function(userId) {
   selectedApplication = pendingApplications.find(app => app.userId === userId);
   if (!selectedApplication) return;
 
-  const date = new Date(selectedApplication.timestamp || 0);
+  const date = new Date(selectedApplication.timestamp || Date.now());
 
   let documentsHtml = '';
-  if (selectedApplication.documentUrl) {
+  if (selectedApplication.discountIdImageUrl) {
     documentsHtml = `
       <div class="document-preview">
-        <img src="${selectedApplication.documentUrl}"
+        <img src="${selectedApplication.discountIdImageUrl}"
              class="document-thumb"
              alt="ID Document"
-             onclick="showImagePreview('${selectedApplication.documentUrl}')">
+             onclick="showImagePreview('${selectedApplication.discountIdImageUrl}')">
       </div>
     `;
   } else {
     documentsHtml = '<p style="color: #999;">No document uploaded</p>';
   }
+
+  const expiryDate = selectedApplication.discountExpiryDate ? 
+    new Date(selectedApplication.discountExpiryDate).toLocaleDateString() : 'N/A';
 
   document.getElementById('modalBody').innerHTML = `
     <div class="detail-section">
@@ -374,11 +361,15 @@ window.showApplicationDetails = function(userId) {
       <div class="detail-grid">
         <div class="detail-item">
           <div class="detail-label">Discount Type</div>
-          <div class="detail-value">${selectedApplication.discountType || 'Senior Citizen'}</div>
+          <div class="detail-value">${selectedApplication.discountType || 'N/A'}</div>
         </div>
         <div class="detail-item">
           <div class="detail-label">ID Number</div>
-          <div class="detail-value">${selectedApplication.idNumber || 'N/A'}</div>
+          <div class="detail-value">${selectedApplication.discountIdNumber || 'N/A'}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Expiry Date</div>
+          <div class="detail-value">${expiryDate}</div>
         </div>
         <div class="detail-item">
           <div class="detail-label">Discount Rate</div>
@@ -438,20 +429,15 @@ window.approveApplication = async function() {
 
   try {
     const userRef = ref(db, `users/${selectedApplication.userId}`);
-    const pendingAppRef = ref(db, `pendingApplications/${selectedApplication.userId}`);
     
-    // Update user with approval
+    // Simply mark as verified
     await update(userRef, {
-      'discountApplication/status': 'approved',
-      'discountApplication/reviewedAt': Date.now(),
-      'hasDiscount': true,
-      'discountType': selectedApplication.discountType || 'Senior'
+      'discountVerified': true,
+      'discountVerifiedAt': Date.now(),
+      'discountVerifiedBy': 'Admin'
     });
-    
-    // FIXED: Remove from pendingApplications
-    await update(pendingAppRef, null); // Delete the entry
 
-    showMessage(`Application approved for ${selectedApplication.userName}`, 'success');
+    showMessage(`Discount approved for ${selectedApplication.userName}`, 'success');
     closeApplicationModal();
   } catch (error) {
     showMessage('Failed to approve application: ' + error.message, 'error');
@@ -463,7 +449,7 @@ window.rejectApplication = async function() {
   if (!selectedApplication) return;
 
   const confirmResult = await showConfirm(
-    `Reject discount application for ${selectedApplication.userName}?`,
+    `Reject discount application for ${selectedApplication.userName}?\n\nThis will remove their discount data.`,
     '⚠️ Reject Discount Application',
     'Reject'
   );
@@ -474,43 +460,23 @@ window.rejectApplication = async function() {
 
   try {
     const userRef = ref(db, `users/${selectedApplication.userId}`);
-    const pendingAppRef = ref(db, `pendingApplications/${selectedApplication.userId}`);
     
-    // Update user with rejection
+    // Remove discount data
     await update(userRef, {
-      'discountApplication/status': 'rejected',
-      'discountApplication/reviewedAt': Date.now(),
-      'hasDiscount': false
+      'discountType': null,
+      'discountIdNumber': null,
+      'discountIdImageUrl': null,
+      'discountExpiryDate': null,
+      'discountVerified': false,
+      'discountRejectedAt': Date.now(),
+      'discountRejectedBy': 'Admin'
     });
-    
-    // FIXED: Remove from pendingApplications
-    await update(pendingAppRef, null); // Delete the entry
 
-    showMessage(`Application rejected for ${selectedApplication.userName}`, 'success');
+    showMessage(`Discount rejected for ${selectedApplication.userName}`, 'success');
     closeApplicationModal();
   } catch (error) {
     showMessage('Failed to reject application: ' + error.message, 'error');
   }
-}
-
-// Show message
-function showMessage(text, type = 'success') {
-  const messageContainer = document.getElementById('messageContainer');
-  const icon = type === 'success' ? '✅' : '❌';
-
-  const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${type}`;
-  messageDiv.innerHTML = `
-    <div class="message-icon">${icon}</div>
-    <div class="message-text">${text}</div>
-  `;
-
-  messageContainer.appendChild(messageDiv);
-
-  // Auto-remove after 5 seconds
-  setTimeout(() => {
-    messageDiv.remove();
-  }, 5000);
 }
 
 // Close modals when clicking outside
