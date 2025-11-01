@@ -70,21 +70,36 @@ function showMessage(text, type = 'success') {
 
 // Load queue from Firebase
 function loadQueue() {
-  const queueRef = ref(db, 'driverQueue');
+  // FIXED: Changed from 'driverQueue' to 'queue' to match actual database structure
+  const queueRef = ref(db, 'queue');
   onValue(queueRef, (snapshot) => {
     if (snapshot.exists()) {
       const queue = snapshot.val();
       queueList = [];
 
       Object.keys(queue).forEach(queueId => {
+        const entry = queue[queueId];
         queueList.push({
           id: queueId,
-          ...queue[queueId]
+          driverName: entry.driverName || 'Unknown Driver',
+          driverId: entry.driverRFID || entry.driverId || 'N/A', // Use driverRFID from actual DB
+          vehicleType: entry.vehicleType || 'N/A',
+          plateNumber: entry.plateNumber || 'N/A',
+          todaNumber: entry.todaNumber || 'N/A',
+          contributionPaid: entry.contributionPaid || false,
+          status: entry.status || 'waiting',
+          timestamp: entry.queueTime || entry.timestamp || Date.now(), // Use queueTime from actual DB
+          queueTime: entry.queueTime || '',
+          ...entry
         });
       });
 
       // Sort by timestamp (oldest first - FIFO)
-      queueList.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      queueList.sort((a, b) => {
+        const timeA = parseInt(a.timestamp) || 0;
+        const timeB = parseInt(b.timestamp) || 0;
+        return timeA - timeB;
+      });
 
       updateQueueCount();
       displayQueue();
@@ -124,22 +139,39 @@ function displayQueue() {
   const paginatedQueue = queueList.slice(startIndex, endIndex);
 
   queueListElement.innerHTML = paginatedQueue.map((entry, index) => {
-    const timestamp = new Date(entry.timestamp || 0);
+    // Handle both numeric timestamp and formatted string timestamp
+    let timestamp;
+    if (typeof entry.timestamp === 'string' && entry.timestamp.includes('-')) {
+      // Already formatted timestamp like "2025-11-01 09:29:47"
+      timestamp = new Date(entry.timestamp.replace(' ', 'T'));
+    } else {
+      timestamp = new Date(parseInt(entry.timestamp) || 0);
+    }
+    
     const waitingTime = getWaitingTime(entry.timestamp);
     const actualIndex = startIndex + index + 1;
+    
+    // Show contribution status badge
+    const contributionBadge = entry.contributionPaid 
+      ? '<span class="contribution-paid">✓ Paid</span>' 
+      : '<span class="contribution-unpaid">⚠ Not Paid</span>';
 
     return `
       <div class="queue-item">
         <div class="queue-position">${actualIndex}</div>
         <div class="queue-driver-info">
-          <div class="queue-driver-name">${entry.driverName || 'Unknown Driver'}</div>
+          <div class="queue-driver-name">
+            ${entry.driverName || 'Unknown Driver'}
+            ${contributionBadge}
+          </div>
           <div class="queue-driver-details">
             RFID: ${entry.driverId || 'N/A'} •
+            TODA: ${entry.todaNumber || 'N/A'} •
             Vehicle: ${entry.vehicleType || 'N/A'} •
             Plate: ${entry.plateNumber || 'N/A'}
           </div>
           <div class="queue-timestamp">
-            Joined: ${timestamp.toLocaleString()} • Waiting: ${waitingTime}
+            Joined: ${timestamp.toLocaleString()} • Waiting: ${waitingTime} • Status: ${entry.status || 'waiting'}
           </div>
         </div>
         <div class="queue-actions">

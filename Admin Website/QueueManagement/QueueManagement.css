@@ -193,6 +193,32 @@ body {
   font-weight: 600;
   color: #333;
   margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.contribution-paid {
+  display: inline-block;
+  background: #d1fae5;
+  color: #065f46;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid #a7f3d0;
+}
+
+.contribution-unpaid {
+  display: inline-block;
+  background: #fed7aa;
+  color: #92400e;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid #fbbf24;
 }
 
 .queue-driver-details {

@@ -102,32 +102,67 @@ window.closeConfirmModal = function() {
 
 // Load pending discount applications
 function loadApplications() {
-  const usersRef = ref(db, 'users');
-  onValue(usersRef, (snapshot) => {
-    if (snapshot.exists()) {
-      const users = snapshot.val();
-      pendingApplications = [];
-
-      Object.keys(users).forEach(userId => {
-        const user = users[userId];
-        if (user.discountApplication && user.discountApplication.status === 'pending') {
-          pendingApplications.push({
-            userId: userId,
-            userName: user.fullName || 'Unknown',
-            userEmail: user.email || 'N/A',
-            userPhone: user.phoneNumber || 'N/A',
-            ...user.discountApplication
+  // FIXED: First get the list of pending application IDs
+  const pendingAppsRef = ref(db, 'pendingApplications');
+  
+  onValue(pendingAppsRef, async (pendingSnapshot) => {
+    pendingApplications = [];
+    
+    if (pendingSnapshot.exists()) {
+      const pendingIds = pendingSnapshot.val();
+      const pendingUserIds = Object.keys(pendingIds).filter(id => pendingIds[id] === true);
+      
+      if (pendingUserIds.length === 0) {
+        updatePendingCount();
+        displayEmptyState();
+        return;
+      }
+      
+      // Now fetch user details for each pending application
+      const usersRef = ref(db, 'users');
+      onValue(usersRef, (usersSnapshot) => {
+        if (usersSnapshot.exists()) {
+          const users = usersSnapshot.val();
+          pendingApplications = [];
+          
+          pendingUserIds.forEach(userId => {
+            const user = users[userId];
+            if (user) {
+              // Extract discount application data
+              const discountData = user.discountApplication || {};
+              
+              pendingApplications.push({
+                userId: userId,
+                userName: user.fullName || user.name || 'Unknown',
+                userEmail: user.email || 'N/A',
+                userPhone: user.phoneNumber || user.phone || 'N/A',
+                discountType: discountData.discountType || user.discountType || 'N/A',
+                status: discountData.status || 'pending',
+                timestamp: discountData.timestamp || discountData.submittedAt || Date.now(),
+                documentURL: discountData.documentURL || user.discountDocumentURL || '',
+                idNumber: discountData.idNumber || user.discountIdNumber || '',
+                expiryDate: discountData.expiryDate || '',
+                remarks: discountData.remarks || '',
+                ...discountData
+              });
+            }
           });
+
+          // Sort by timestamp (newest first)
+          pendingApplications.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+          updatePendingCount();
+          displayApplications();
+        } else {
+          updatePendingCount();
+          displayEmptyState();
         }
+      }, (error) => {
+        console.error('Error loading user details:', error);
+        showMessage('Error loading user details: ' + error.message, 'error');
       });
-
-      // Sort by timestamp (newest first)
-      pendingApplications.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-      updatePendingCount();
-      displayApplications();
+      
     } else {
-      pendingApplications = [];
       updatePendingCount();
       displayEmptyState();
     }
@@ -403,12 +438,18 @@ window.approveApplication = async function() {
 
   try {
     const userRef = ref(db, `users/${selectedApplication.userId}`);
+    const pendingAppRef = ref(db, `pendingApplications/${selectedApplication.userId}`);
+    
+    // Update user with approval
     await update(userRef, {
       'discountApplication/status': 'approved',
       'discountApplication/reviewedAt': Date.now(),
       'hasDiscount': true,
       'discountType': selectedApplication.discountType || 'Senior'
     });
+    
+    // FIXED: Remove from pendingApplications
+    await update(pendingAppRef, null); // Delete the entry
 
     showMessage(`Application approved for ${selectedApplication.userName}`, 'success');
     closeApplicationModal();
@@ -433,11 +474,17 @@ window.rejectApplication = async function() {
 
   try {
     const userRef = ref(db, `users/${selectedApplication.userId}`);
+    const pendingAppRef = ref(db, `pendingApplications/${selectedApplication.userId}`);
+    
+    // Update user with rejection
     await update(userRef, {
       'discountApplication/status': 'rejected',
       'discountApplication/reviewedAt': Date.now(),
       'hasDiscount': false
     });
+    
+    // FIXED: Remove from pendingApplications
+    await update(pendingAppRef, null); // Delete the entry
 
     showMessage(`Application rejected for ${selectedApplication.userName}`, 'success');
     closeApplicationModal();
