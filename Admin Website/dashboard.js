@@ -445,6 +445,26 @@ function loadStats() {
   });
 }
 
+const menuToggle = document.getElementById("menuToggle");
+const sidebar = document.querySelector(".sidebar");
+
+menuToggle.addEventListener("click", () => {
+  sidebar.classList.toggle("active");
+  document.body.classList.toggle("sidebar-open");
+});
+
+// Optional: close sidebar when clicking outside
+document.body.addEventListener("click", (e) => {
+  if (
+    sidebar.classList.contains("active") &&
+    !sidebar.contains(e.target) &&
+    !menuToggle.contains(e.target)
+  ) {
+    sidebar.classList.remove("active");
+    document.body.classList.remove("sidebar-open");
+  }
+});
+
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', initializeDashboard);
-
