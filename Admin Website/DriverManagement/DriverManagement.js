@@ -23,6 +23,7 @@ let allDrivers = [];
 let filteredDrivers = [];
 let selectedDriver = null;
 let currentStep = 1; // Track current onboarding step
+let processedDriverIds = new Set(); // Track drivers we've already notified about
 
 // Pagination variables
 let currentPage = 1;
@@ -138,6 +139,71 @@ window.closePromptModal = function() {
   if (promptCallback) promptCallback(null);
 }
 
+// Create notification for new driver registration (uses existing notification bell system)
+async function createDriverNotification(driverId, driverName, verificationType = 'registration') {
+  try {
+    // Check if notification already exists for this driver
+    const notificationsRef = ref(db, 'notifications');
+    const notificationsSnapshot = await new Promise((resolve) => {
+      onValue(notificationsRef, (snapshot) => {
+        resolve(snapshot);
+      }, { onlyOnce: true });
+    });
+    
+    if (notificationsSnapshot.exists()) {
+      const notifications = notificationsSnapshot.val();
+      // Check if there's already an unread notification for this driver's verification
+      const existingNotification = Object.values(notifications).find(notif => 
+        notif.driverId === driverId && 
+        notif.type === 'DRIVER_VERIFICATION' &&
+        !notif.deleted
+      );
+      
+      if (existingNotification) {
+        console.log('[DriverManagement] Notification already exists for driver:', driverId);
+        return; // Don't create duplicate
+      }
+    }
+    
+    const newNotificationRef = push(notificationsRef);
+    
+    let notificationData = {};
+    
+    if (verificationType === 'registration') {
+      notificationData = {
+        type: 'DRIVER_VERIFICATION',
+        priority: 'medium',
+        title: 'New Driver Registration',
+        message: `${driverName} has registered and needs verification`,
+        driverId: driverId,
+        driverName: driverName,
+        timestamp: Date.now(),
+        isRead: false,
+        deleted: false,
+        actionRequired: true
+      };
+    } else if (verificationType === 'resubmission') {
+      notificationData = {
+        type: 'DRIVER_VERIFICATION',
+        priority: 'medium',
+        title: 'Driver Resubmitted Documents',
+        message: `${driverName} has resubmitted documents after rejection`,
+        driverId: driverId,
+        driverName: driverName,
+        timestamp: Date.now(),
+        isRead: false,
+        deleted: false,
+        actionRequired: true
+      };
+    }
+    
+    await set(newNotificationRef, notificationData);
+    console.log('[DriverManagement] Created notification for:', driverName);
+  } catch (error) {
+    console.error('[DriverManagement] Error creating notification:', error);
+  }
+}
+
 // Load all drivers from Firebase
 function loadDrivers() {
   const driversRef = ref(db, 'drivers');
@@ -148,6 +214,13 @@ function loadDrivers() {
 
       for (const driverId of Object.keys(drivers)) {
         const driver = drivers[driverId];
+        
+        // Check if this is a new pending driver that needs notification
+        if (driver.verificationStatus === 'pending' && !processedDriverIds.has(driverId)) {
+          const driverName = driver.name || driver.fullName || 'Unknown Driver';
+          createDriverNotification(driverId, driverName, 'registration');
+          processedDriverIds.add(driverId);
+        }
         
         // Auto-reset rejected drivers who re-upload documents
         // Check if driver is rejected AND has documents/info updated after rejection
@@ -177,6 +250,10 @@ function loadDrivers() {
               driver.verificationStatus = 'pending';
               driver.hasBeenAutoReset = true;
               driver.autoResetAt = new Date().toISOString();
+              
+              // Create notification for document resubmission
+              const driverName = driver.name || driver.fullName || 'Unknown Driver';
+              createDriverNotification(driverId, driverName, 'resubmission');
               
               console.log(`Auto-reset driver ${driverId} from rejected to pending`);
             } catch (error) {

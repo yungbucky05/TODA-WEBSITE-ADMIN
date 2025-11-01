@@ -70,15 +70,19 @@ function showMessage(text, type = 'success') {
 
 // Load queue from Firebase
 function loadQueue() {
+  console.log('[QueueManagement] Starting to load queue data...');
   // FIXED: Changed from 'driverQueue' to 'queue' to match actual database structure
   const queueRef = ref(db, 'queue');
   onValue(queueRef, (snapshot) => {
+    console.log('[QueueManagement] Received snapshot:', snapshot.exists());
     if (snapshot.exists()) {
       const queue = snapshot.val();
+      console.log('[QueueManagement] Queue data:', queue);
       queueList = [];
 
       Object.keys(queue).forEach(queueId => {
         const entry = queue[queueId];
+        console.log('[QueueManagement] Processing queue entry:', queueId, entry);
         queueList.push({
           id: queueId,
           driverName: entry.driverName || 'Unknown Driver',
@@ -94,6 +98,8 @@ function loadQueue() {
         });
       });
 
+      console.log('[QueueManagement] Processed queue list:', queueList);
+
       // Sort by timestamp (oldest first - FIFO)
       queueList.sort((a, b) => {
         const timeA = parseInt(a.timestamp) || 0;
@@ -104,11 +110,13 @@ function loadQueue() {
       updateQueueCount();
       displayQueue();
     } else {
+      console.log('[QueueManagement] No queue data found');
       queueList = [];
       updateQueueCount();
       displayEmptyState();
     }
   }, (error) => {
+    console.error('[QueueManagement] Error loading queue:', error);
     showMessage('Error loading queue: ' + error.message, 'error');
     document.getElementById('queueList').innerHTML = '<div class="empty-state"><div class="empty-state-icon">❌</div><h3>Error Loading Queue</h3><p>Failed to load queue data</p></div>';
   });

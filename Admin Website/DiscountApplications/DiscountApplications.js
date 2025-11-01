@@ -1,6 +1,6 @@
 // Import Firebase SDKs
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
-import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
+import { getDatabase, ref, onValue, update, push, set } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
 
 // Firebase config
 const firebaseConfig = {
@@ -19,6 +19,8 @@ const db = getDatabase(app);
 
 let pendingApplications = [];
 let selectedApplication = null;
+let processedApplicationIds = new Set(); // Track which applications we've already notified about
+let rejectedApplicationIds = new Set(); // Track previously rejected applications for resubmission detection
 
 // Pagination variables
 let currentPage = 1;
@@ -100,73 +102,136 @@ window.closeConfirmModal = function() {
   if (confirmCallback) confirmCallback(false);
 }
 
+// Create notification for discount application (uses existing notification bell system)
+async function createDiscountNotification(userId, userName, discountType, isResubmission = false) {
+  try {
+    // Check if notification already exists for this user's current application
+    const notificationsRef = ref(db, 'notifications');
+    const notificationsSnapshot = await new Promise((resolve) => {
+      onValue(notificationsRef, (snapshot) => {
+        resolve(snapshot);
+      }, { onlyOnce: true });
+    });
+    
+    if (notificationsSnapshot.exists()) {
+      const notifications = notificationsSnapshot.val();
+      // Check if there's already an unread notification for this user's discount application
+      const existingNotification = Object.values(notifications).find(notif => 
+        notif.userId === userId && 
+        (notif.type === 'DISCOUNT_APPLICATION' || notif.type === 'DISCOUNT_RESUBMISSION') &&
+        !notif.deleted
+      );
+      
+      if (existingNotification) {
+        console.log('[DiscountApplications] Notification already exists for user:', userId);
+        return; // Don't create duplicate
+      }
+    }
+    
+    const newNotificationRef = push(notificationsRef);
+    
+    const notificationData = isResubmission ? {
+      type: 'DISCOUNT_RESUBMISSION',
+      priority: 'medium',
+      title: 'Discount Resubmitted After Rejection',
+      message: `${userName} has resubmitted ${discountType} discount application after rejection`,
+      userId: userId,
+      userName: userName,
+      discountType: discountType,
+      timestamp: Date.now(),
+      isRead: false,
+      deleted: false,
+      actionRequired: true
+    } : {
+      type: 'DISCOUNT_APPLICATION',
+      priority: 'medium',
+      title: 'New Discount Application',
+      message: `${userName} has applied for ${discountType} discount`,
+      userId: userId,
+      userName: userName,
+      discountType: discountType,
+      timestamp: Date.now(),
+      isRead: false,
+      deleted: false,
+      actionRequired: true
+    };
+    
+    await set(newNotificationRef, notificationData);
+    
+    console.log(`[DiscountApplications] Created ${isResubmission ? 'resubmission' : 'new'} notification for:`, userName);
+  } catch (error) {
+    console.error('[DiscountApplications] Error creating notification:', error);
+  }
+}
+
 // Load pending discount applications
 function loadApplications() {
-  // FIXED: First get the list of pending application IDs
-  const pendingAppsRef = ref(db, 'pendingApplications');
+  console.log('[DiscountApplications] Starting to load applications...');
+  // SIMPLIFIED: Just scan all users for discount data that needs verification
+  const usersRef = ref(db, 'users');
   
-  onValue(pendingAppsRef, async (pendingSnapshot) => {
+  onValue(usersRef, (snapshot) => {
+    console.log('[DiscountApplications] Received users snapshot:', snapshot.exists());
     pendingApplications = [];
     
-    if (pendingSnapshot.exists()) {
-      const pendingIds = pendingSnapshot.val();
-      const pendingUserIds = Object.keys(pendingIds).filter(id => pendingIds[id] === true);
+    if (snapshot.exists()) {
+      const users = snapshot.val();
+      console.log('[DiscountApplications] Total users found:', Object.keys(users).length);
       
-      if (pendingUserIds.length === 0) {
-        updatePendingCount();
-        displayEmptyState();
-        return;
-      }
-      
-      // Now fetch user details for each pending application
-      const usersRef = ref(db, 'users');
-      onValue(usersRef, (usersSnapshot) => {
-        if (usersSnapshot.exists()) {
-          const users = usersSnapshot.val();
-          pendingApplications = [];
-          
-          pendingUserIds.forEach(userId => {
-            const user = users[userId];
-            if (user) {
-              // Extract discount application data
-              const discountData = user.discountApplication || {};
-              
-              pendingApplications.push({
-                userId: userId,
-                userName: user.fullName || user.name || 'Unknown',
-                userEmail: user.email || 'N/A',
-                userPhone: user.phoneNumber || user.phone || 'N/A',
-                discountType: discountData.discountType || user.discountType || 'N/A',
-                status: discountData.status || 'pending',
-                timestamp: discountData.timestamp || discountData.submittedAt || Date.now(),
-                documentURL: discountData.documentURL || user.discountDocumentURL || '',
-                idNumber: discountData.idNumber || user.discountIdNumber || '',
-                expiryDate: discountData.expiryDate || '',
-                remarks: discountData.remarks || '',
-                ...discountData
-              });
-            }
-          });
-
-          // Sort by timestamp (newest first)
-          pendingApplications.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-          updatePendingCount();
-          displayApplications();
-        } else {
-          updatePendingCount();
-          displayEmptyState();
+      Object.keys(users).forEach(userId => {
+        const user = users[userId];
+        
+        // First, track previously rejected applications
+        if (user && user.discountRejected === true && user.discountRejectionData) {
+          rejectedApplicationIds.add(userId);
         }
-      }, (error) => {
-        console.error('Error loading user details:', error);
-        showMessage('Error loading user details: ' + error.message, 'error');
+        
+        // Check if user has discount data but NOT verified yet AND NOT rejected
+        // Look for users with discountType but discountVerified is false/missing and NOT rejected
+        if (user && user.discountType && !user.discountVerified && !user.discountRejected) {
+          console.log('[DiscountApplications] Found unverified discount:', userId, user.discountType);
+          
+          // Check if this is a resubmission (was previously rejected)
+          const wasRejected = rejectedApplicationIds.has(userId) || 
+                             (user.discountRejectionData && user.discountRejectionData.discountType);
+          
+          // Create notification if this is a new application we haven't seen before
+          if (!processedApplicationIds.has(userId)) {
+            const userName = user.name || user.fullName || 'Unknown';
+            createDiscountNotification(userId, userName, user.discountType, wasRejected);
+            processedApplicationIds.add(userId);
+          }
+          
+          pendingApplications.push({
+            userId: userId,
+            userName: user.name || user.fullName || 'Unknown',
+            userEmail: user.email || 'N/A',
+            userPhone: user.phoneNumber || user.phone || 'N/A',
+            discountType: user.discountType || 'N/A',
+            discountIdNumber: user.discountIdNumber || '',
+            discountIdImageUrl: user.discountIdImageUrl || '',
+            discountExpiryDate: user.discountExpiryDate || '',
+            timestamp: user.discountApplicationDate || user.lastActiveTime || Date.now(),
+            status: 'pending'
+          });
+        }
       });
-      
+
+      console.log('[DiscountApplications] Pending applications found:', pendingApplications.length);
+      console.log('[DiscountApplications] Applications data:', pendingApplications);
+
+      // Sort by timestamp (newest first)
+      pendingApplications.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      updatePendingCount();
+      displayApplications();
     } else {
+      console.log('[DiscountApplications] No users found in database');
       updatePendingCount();
       displayEmptyState();
     }
   }, (error) => {
+    console.error('[DiscountApplications] Error loading applications:', error);
     showMessage('Error loading applications: ' + error.message, 'error');
   });
 }
@@ -216,7 +281,7 @@ function displayApplications() {
             <span class="info-label">Phone:</span> ${app.userPhone}
           </div>
           <div class="info-item">
-            <span class="info-label">ID Number:</span> ${app.idNumber || 'N/A'}
+            <span class="info-label">ID Number:</span> ${app.discountIdNumber || 'N/A'}
           </div>
         </div>
       </div>
@@ -330,21 +395,24 @@ window.showApplicationDetails = function(userId) {
   selectedApplication = pendingApplications.find(app => app.userId === userId);
   if (!selectedApplication) return;
 
-  const date = new Date(selectedApplication.timestamp || 0);
+  const date = new Date(selectedApplication.timestamp || Date.now());
 
   let documentsHtml = '';
-  if (selectedApplication.documentUrl) {
+  if (selectedApplication.discountIdImageUrl) {
     documentsHtml = `
       <div class="document-preview">
-        <img src="${selectedApplication.documentUrl}"
+        <img src="${selectedApplication.discountIdImageUrl}"
              class="document-thumb"
              alt="ID Document"
-             onclick="showImagePreview('${selectedApplication.documentUrl}')">
+             onclick="showImagePreview('${selectedApplication.discountIdImageUrl}')">
       </div>
     `;
   } else {
     documentsHtml = '<p style="color: #999;">No document uploaded</p>';
   }
+
+  const expiryDate = selectedApplication.discountExpiryDate ? 
+    new Date(selectedApplication.discountExpiryDate).toLocaleDateString() : 'N/A';
 
   document.getElementById('modalBody').innerHTML = `
     <div class="detail-section">
@@ -374,11 +442,15 @@ window.showApplicationDetails = function(userId) {
       <div class="detail-grid">
         <div class="detail-item">
           <div class="detail-label">Discount Type</div>
-          <div class="detail-value">${selectedApplication.discountType || 'Senior Citizen'}</div>
+          <div class="detail-value">${selectedApplication.discountType || 'N/A'}</div>
         </div>
         <div class="detail-item">
           <div class="detail-label">ID Number</div>
-          <div class="detail-value">${selectedApplication.idNumber || 'N/A'}</div>
+          <div class="detail-value">${selectedApplication.discountIdNumber || 'N/A'}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Expiry Date</div>
+          <div class="detail-value">${expiryDate}</div>
         </div>
         <div class="detail-item">
           <div class="detail-label">Discount Rate</div>
@@ -438,33 +510,59 @@ window.approveApplication = async function() {
 
   try {
     const userRef = ref(db, `users/${selectedApplication.userId}`);
-    const pendingAppRef = ref(db, `pendingApplications/${selectedApplication.userId}`);
     
-    // Update user with approval
+    // Simply mark as verified
     await update(userRef, {
-      'discountApplication/status': 'approved',
-      'discountApplication/reviewedAt': Date.now(),
-      'hasDiscount': true,
-      'discountType': selectedApplication.discountType || 'Senior'
+      'discountVerified': true,
+      'discountVerifiedAt': Date.now(),
+      'discountVerifiedBy': 'Admin'
     });
-    
-    // FIXED: Remove from pendingApplications
-    await update(pendingAppRef, null); // Delete the entry
 
-    showMessage(`Application approved for ${selectedApplication.userName}`, 'success');
+    showMessage(`Discount approved for ${selectedApplication.userName}`, 'success');
     closeApplicationModal();
   } catch (error) {
     showMessage('Failed to approve application: ' + error.message, 'error');
   }
 }
 
-// Reject application
-window.rejectApplication = async function() {
+// Reject application - Show rejection reasons modal
+window.rejectApplication = function() {
+  if (!selectedApplication) return;
+  
+  // Close the application details modal
+  document.getElementById('applicationModal').classList.remove('active');
+  
+  // Show rejection modal
+  document.getElementById('rejectionModal').classList.add('active');
+  
+  // Uncheck all checkboxes
+  document.querySelectorAll('#rejectionReasons input[type="checkbox"]').forEach(cb => cb.checked = false);
+  document.getElementById('customRejectionReason').value = '';
+}
+
+// Submit rejection with reasons
+window.submitRejection = async function() {
   if (!selectedApplication) return;
 
+  // Get all checked reasons
+  const checkedBoxes = document.querySelectorAll('#rejectionReasons input[type="checkbox"]:checked');
+  const reasons = Array.from(checkedBoxes).map(cb => cb.value);
+  
+  // Get custom reason if provided
+  const customReason = document.getElementById('customRejectionReason').value.trim();
+  if (customReason) {
+    reasons.push(customReason);
+  }
+
+  // Validate that at least one reason is selected
+  if (reasons.length === 0) {
+    showMessage('Please select at least one rejection reason', 'warning');
+    return;
+  }
+
   const confirmResult = await showConfirm(
-    `Reject discount application for ${selectedApplication.userName}?`,
-    '⚠️ Reject Discount Application',
+    `Reject discount application for ${selectedApplication.userName}?\n\nReasons: ${reasons.join(', ')}`,
+    '⚠️ Confirm Rejection',
     'Reject'
   );
   
@@ -474,43 +572,46 @@ window.rejectApplication = async function() {
 
   try {
     const userRef = ref(db, `users/${selectedApplication.userId}`);
-    const pendingAppRef = ref(db, `pendingApplications/${selectedApplication.userId}`);
     
-    // Update user with rejection
+    // Update user with rejection data
     await update(userRef, {
-      'discountApplication/status': 'rejected',
-      'discountApplication/reviewedAt': Date.now(),
-      'hasDiscount': false
+      'discountVerified': false,
+      'discountRejected': true,
+      'discountRejectionReasons': reasons,
+      'discountRejectedAt': Date.now(),
+      'discountRejectedBy': 'Admin',
+      // Keep the original application data so user can see what was rejected
+      'discountRejectionData': {
+        discountType: selectedApplication.discountType,
+        discountIdNumber: selectedApplication.discountIdNumber,
+        discountIdImageUrl: selectedApplication.discountIdImageUrl,
+        discountExpiryDate: selectedApplication.discountExpiryDate
+      }
     });
-    
-    // FIXED: Remove from pendingApplications
-    await update(pendingAppRef, null); // Delete the entry
 
-    showMessage(`Application rejected for ${selectedApplication.userName}`, 'success');
+    showMessage(`Discount rejected for ${selectedApplication.userName}`, 'success');
+    
+    // Close both modals
+    closeRejectionModal();
     closeApplicationModal();
   } catch (error) {
     showMessage('Failed to reject application: ' + error.message, 'error');
   }
 }
 
-// Show message
-function showMessage(text, type = 'success') {
-  const messageContainer = document.getElementById('messageContainer');
-  const icon = type === 'success' ? '✅' : '❌';
+// Close rejection modal
+window.closeRejectionModal = function() {
+  document.getElementById('rejectionModal').classList.remove('active');
+  selectedApplication = null;
+}
 
-  const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${type}`;
-  messageDiv.innerHTML = `
-    <div class="message-icon">${icon}</div>
-    <div class="message-text">${text}</div>
-  `;
-
-  messageContainer.appendChild(messageDiv);
-
-  // Auto-remove after 5 seconds
-  setTimeout(() => {
-    messageDiv.remove();
-  }, 5000);
+// Cancel rejection and go back to application details
+window.cancelRejection = function() {
+  closeRejectionModal();
+  // Reopen the application modal
+  if (selectedApplication) {
+    document.getElementById('applicationModal').classList.add('active');
+  }
 }
 
 // Close modals when clicking outside

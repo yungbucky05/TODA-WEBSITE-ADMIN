@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TODA Admin Dashboard</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/png" href="moto_logo.png">
 </head>
 <body>
   <div class="dashboard-container">
@@ -66,11 +67,13 @@
     <main class="main-content">
       <!-- Top Bar -->
       <header class="top-bar">
+        <button class="menu-toggle" id="menuToggle">☰</button>
         <div class="breadcrumb">
           <span>Home</span>
           <span class="separator">/</span>
           <span class="current">Dashboard</span>
         </div>
+        
         <div class="top-bar-actions">
           <div class="notification-container">
             <button class="notification-bell" id="notificationBell" onclick="toggleNotifications()">
@@ -81,7 +84,10 @@
             <div class="notification-dropdown" id="notificationDropdown">
               <div class="notification-header">
                 <h3>Notifications</h3>
-                <button class="mark-all-read" onclick="markAllAsRead()">Mark all as read</button>
+                <div class="notification-header-actions">
+                  <button class="mark-all-read" onclick="markAllAsRead()">Mark all read</button>
+                  <button class="clear-all-btn" onclick="clearAllNotifications()">Clear all</button>
+                </div>
               </div>
               <div class="notification-list" id="notificationList">
                 <div class="no-notifications">

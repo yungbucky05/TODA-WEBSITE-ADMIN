@@ -178,6 +178,45 @@ window.deleteNotification = async function(notificationId) {
   }
 }
 
+// Clear all notifications
+window.clearAllNotifications = async function() {
+  const confirmResult = await showConfirm(
+    'Are you sure you want to clear all notifications?\n\nThis will mark all notifications as deleted.',
+    '🗑️ Clear All Notifications',
+    'Clear All'
+  );
+  
+  if (!confirmResult) {
+    return;
+  }
+
+  try {
+    const updates = {};
+    
+    notifications.forEach(notif => {
+      if (!notif.deleted) {
+        updates[`notifications/${notif.id}/deleted`] = true;
+        updates[`notifications/${notif.id}/isRead`] = true;
+      }
+    });
+    
+    if (Object.keys(updates).length > 0) {
+      await update(ref(db), updates);
+      showMessage('All notifications cleared', 'success');
+    }
+  } catch (error) {
+    showMessage('Error clearing notifications: ' + error.message, 'error');
+  }
+}
+
+// Clear single notification (alias for deleteNotification for consistency)
+window.clearNotification = async function(notificationId, event) {
+  if (event) {
+    event.stopPropagation(); // Prevent triggering notification action
+  }
+  await deleteNotification(notificationId);
+}
+
 // Handle notification action (e.g., navigate to driver management)
 window.handleNotificationAction = function(notification) {
   // Mark as read
@@ -192,6 +231,9 @@ window.handleNotificationAction = function(notification) {
       window.location.href = 'DriverManagement/DriverManagement.html';
       break;
     case 'DISCOUNT_APPLICATION':
+      window.location.href = 'DiscountApplications/DiscountApplications.html';
+      break;
+    case 'DISCOUNT_RESUBMISSION':
       window.location.href = 'DiscountApplications/DiscountApplications.html';
       break;
     default:
@@ -254,6 +296,7 @@ function renderNotifications() {
     if (notif.type === 'RFID_MISSING') icon = '🚨';
     else if (notif.type === 'DRIVER_VERIFICATION') icon = '👤';
     else if (notif.type === 'DISCOUNT_APPLICATION') icon = '🎫';
+    else if (notif.type === 'DISCOUNT_RESUBMISSION') icon = '🔄';
     
     return `
       <div class="notification-item ${readClass} ${priorityClass} ${actionClass}" 
@@ -265,6 +308,7 @@ function renderNotifications() {
           <div class="notification-time">${formatNotificationTime(notif.timestamp)}</div>
         </div>
         ${!notif.isRead ? '<div class="unread-indicator"></div>' : ''}
+        <button class="clear-notification-btn" onclick="clearNotification('${notif.id}', event)" title="Clear notification">×</button>
       </div>
     `;
   }).join('');
@@ -401,6 +445,26 @@ function loadStats() {
   });
 }
 
+const menuToggle = document.getElementById("menuToggle");
+const sidebar = document.querySelector(".sidebar");
+
+menuToggle.addEventListener("click", () => {
+  sidebar.classList.toggle("active");
+  document.body.classList.toggle("sidebar-open");
+});
+
+// Optional: close sidebar when clicking outside
+document.body.addEventListener("click", (e) => {
+  if (
+    sidebar.classList.contains("active") &&
+    !sidebar.contains(e.target) &&
+    !menuToggle.contains(e.target)
+  ) {
+    sidebar.classList.remove("active");
+    document.body.classList.remove("sidebar-open");
+  }
+});
+
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', initializeDashboard);
-

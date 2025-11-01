@@ -530,6 +530,12 @@ body {
   margin: 0;
 }
 
+.notification-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .mark-all-read {
   background: transparent;
   border: none;
@@ -544,6 +550,50 @@ body {
 
 .mark-all-read:hover {
   background: #f0f4ff;
+}
+
+.clear-all-btn {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.clear-all-btn:hover {
+  background: #fee2e2;
+}
+
+.clear-notification-btn {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  line-height: 1;
+  opacity: 0;
+  z-index: 10;
+}
+
+.notification-item:hover .clear-notification-btn {
+  opacity: 1;
+}
+
+.clear-notification-btn:hover {
+  background: #fee2e2;
+  color: #ef4444;
+  transform: scale(1.1);
 }
 
 .notification-list {
@@ -776,5 +826,64 @@ body {
   to {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+/* Toggle button styling */
+.menu-toggle {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 1.8rem;
+  color: #1e293b;
+  cursor: pointer;
+  margin-right: 16px;
+}
+
+/* Mobile behavior */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.3s ease-in-out;
+    position: fixed;
+    width: 260px;
+    z-index: 1000;
+    box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
+  }
+
+  .sidebar.active {
+    transform: translateX(0);
+  }
+
+  /* Make main content fill screen when sidebar hidden */
+  .main-content {
+    margin-left: 0 !important;
+  }
+
+  /* Show hamburger button */
+  .menu-toggle {
+    display: block;
+  }
+
+  /* Optional: dim background when sidebar is open */
+  body.sidebar-open::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 999;
+  }
+}
+
+/* Desktop default */
+.main-content {
+  margin-left: 280px;
+  transition: margin-left 0.3s ease-in-out;
+}
+
+/* Hide confirmation modal entirely on small screens */
+@media (max-width: 768px) {
+  #confirmModal {
+    display: none !important;
   }
 }
