@@ -1,6 +1,6 @@
 // Import Firebase SDKs
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
-import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
+import { getDatabase, ref, onValue, update, push, set } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
 
 // Firebase config
 const firebaseConfig = {
@@ -19,6 +19,8 @@ const db = getDatabase(app);
 
 let pendingApplications = [];
 let selectedApplication = null;
+let processedApplicationIds = new Set(); // Track which applications we've already notified about
+let rejectedApplicationIds = new Set(); // Track previously rejected applications for resubmission detection
 
 // Pagination variables
 let currentPage = 1;
@@ -100,6 +102,68 @@ window.closeConfirmModal = function() {
   if (confirmCallback) confirmCallback(false);
 }
 
+// Create notification for discount application (uses existing notification bell system)
+async function createDiscountNotification(userId, userName, discountType, isResubmission = false) {
+  try {
+    // Check if notification already exists for this user's current application
+    const notificationsRef = ref(db, 'notifications');
+    const notificationsSnapshot = await new Promise((resolve) => {
+      onValue(notificationsRef, (snapshot) => {
+        resolve(snapshot);
+      }, { onlyOnce: true });
+    });
+    
+    if (notificationsSnapshot.exists()) {
+      const notifications = notificationsSnapshot.val();
+      // Check if there's already an unread notification for this user's discount application
+      const existingNotification = Object.values(notifications).find(notif => 
+        notif.userId === userId && 
+        (notif.type === 'DISCOUNT_APPLICATION' || notif.type === 'DISCOUNT_RESUBMISSION') &&
+        !notif.deleted
+      );
+      
+      if (existingNotification) {
+        console.log('[DiscountApplications] Notification already exists for user:', userId);
+        return; // Don't create duplicate
+      }
+    }
+    
+    const newNotificationRef = push(notificationsRef);
+    
+    const notificationData = isResubmission ? {
+      type: 'DISCOUNT_RESUBMISSION',
+      priority: 'medium',
+      title: 'Discount Resubmitted After Rejection',
+      message: `${userName} has resubmitted ${discountType} discount application after rejection`,
+      userId: userId,
+      userName: userName,
+      discountType: discountType,
+      timestamp: Date.now(),
+      isRead: false,
+      deleted: false,
+      actionRequired: true
+    } : {
+      type: 'DISCOUNT_APPLICATION',
+      priority: 'medium',
+      title: 'New Discount Application',
+      message: `${userName} has applied for ${discountType} discount`,
+      userId: userId,
+      userName: userName,
+      discountType: discountType,
+      timestamp: Date.now(),
+      isRead: false,
+      deleted: false,
+      actionRequired: true
+    };
+    
+    await set(newNotificationRef, notificationData);
+    
+    console.log(`[DiscountApplications] Created ${isResubmission ? 'resubmission' : 'new'} notification for:`, userName);
+  } catch (error) {
+    console.error('[DiscountApplications] Error creating notification:', error);
+  }
+}
+
 // Load pending discount applications
 function loadApplications() {
   console.log('[DiscountApplications] Starting to load applications...');
@@ -117,10 +181,27 @@ function loadApplications() {
       Object.keys(users).forEach(userId => {
         const user = users[userId];
         
-        // Check if user has discount data but NOT verified yet
-        // Look for users with discountType but discountVerified is false/missing
-        if (user && user.discountType && !user.discountVerified) {
+        // First, track previously rejected applications
+        if (user && user.discountRejected === true && user.discountRejectionData) {
+          rejectedApplicationIds.add(userId);
+        }
+        
+        // Check if user has discount data but NOT verified yet AND NOT rejected
+        // Look for users with discountType but discountVerified is false/missing and NOT rejected
+        if (user && user.discountType && !user.discountVerified && !user.discountRejected) {
           console.log('[DiscountApplications] Found unverified discount:', userId, user.discountType);
+          
+          // Check if this is a resubmission (was previously rejected)
+          const wasRejected = rejectedApplicationIds.has(userId) || 
+                             (user.discountRejectionData && user.discountRejectionData.discountType);
+          
+          // Create notification if this is a new application we haven't seen before
+          if (!processedApplicationIds.has(userId)) {
+            const userName = user.name || user.fullName || 'Unknown';
+            createDiscountNotification(userId, userName, user.discountType, wasRejected);
+            processedApplicationIds.add(userId);
+          }
+          
           pendingApplications.push({
             userId: userId,
             userName: user.name || user.fullName || 'Unknown',
@@ -444,13 +525,44 @@ window.approveApplication = async function() {
   }
 }
 
-// Reject application
-window.rejectApplication = async function() {
+// Reject application - Show rejection reasons modal
+window.rejectApplication = function() {
+  if (!selectedApplication) return;
+  
+  // Close the application details modal
+  document.getElementById('applicationModal').classList.remove('active');
+  
+  // Show rejection modal
+  document.getElementById('rejectionModal').classList.add('active');
+  
+  // Uncheck all checkboxes
+  document.querySelectorAll('#rejectionReasons input[type="checkbox"]').forEach(cb => cb.checked = false);
+  document.getElementById('customRejectionReason').value = '';
+}
+
+// Submit rejection with reasons
+window.submitRejection = async function() {
   if (!selectedApplication) return;
 
+  // Get all checked reasons
+  const checkedBoxes = document.querySelectorAll('#rejectionReasons input[type="checkbox"]:checked');
+  const reasons = Array.from(checkedBoxes).map(cb => cb.value);
+  
+  // Get custom reason if provided
+  const customReason = document.getElementById('customRejectionReason').value.trim();
+  if (customReason) {
+    reasons.push(customReason);
+  }
+
+  // Validate that at least one reason is selected
+  if (reasons.length === 0) {
+    showMessage('Please select at least one rejection reason', 'warning');
+    return;
+  }
+
   const confirmResult = await showConfirm(
-    `Reject discount application for ${selectedApplication.userName}?\n\nThis will remove their discount data.`,
-    '⚠️ Reject Discount Application',
+    `Reject discount application for ${selectedApplication.userName}?\n\nReasons: ${reasons.join(', ')}`,
+    '⚠️ Confirm Rejection',
     'Reject'
   );
   
@@ -461,21 +573,44 @@ window.rejectApplication = async function() {
   try {
     const userRef = ref(db, `users/${selectedApplication.userId}`);
     
-    // Remove discount data
+    // Update user with rejection data
     await update(userRef, {
-      'discountType': null,
-      'discountIdNumber': null,
-      'discountIdImageUrl': null,
-      'discountExpiryDate': null,
       'discountVerified': false,
+      'discountRejected': true,
+      'discountRejectionReasons': reasons,
       'discountRejectedAt': Date.now(),
-      'discountRejectedBy': 'Admin'
+      'discountRejectedBy': 'Admin',
+      // Keep the original application data so user can see what was rejected
+      'discountRejectionData': {
+        discountType: selectedApplication.discountType,
+        discountIdNumber: selectedApplication.discountIdNumber,
+        discountIdImageUrl: selectedApplication.discountIdImageUrl,
+        discountExpiryDate: selectedApplication.discountExpiryDate
+      }
     });
 
     showMessage(`Discount rejected for ${selectedApplication.userName}`, 'success');
+    
+    // Close both modals
+    closeRejectionModal();
     closeApplicationModal();
   } catch (error) {
     showMessage('Failed to reject application: ' + error.message, 'error');
+  }
+}
+
+// Close rejection modal
+window.closeRejectionModal = function() {
+  document.getElementById('rejectionModal').classList.remove('active');
+  selectedApplication = null;
+}
+
+// Cancel rejection and go back to application details
+window.cancelRejection = function() {
+  closeRejectionModal();
+  // Reopen the application modal
+  if (selectedApplication) {
+    document.getElementById('applicationModal').classList.add('active');
   }
 }
 

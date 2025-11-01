@@ -109,6 +109,59 @@
   <!-- Message Container for Notifications -->
   <div id="messageContainer" class="message-container"></div>
 
+  <!-- Rejection Reasons Modal -->
+  <div id="rejectionModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>❌ Reject Discount Application</h2>
+        <button class="close-btn" onclick="closeRejectionModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom: 20px; color: #666;">Select the reason(s) for rejecting this discount application:</p>
+        
+        <div id="rejectionReasons" style="margin-bottom: 20px;">
+          <label class="rejection-option">
+            <input type="checkbox" value="Invalid or expired ID">
+            <span>Invalid or expired ID</span>
+          </label>
+          <label class="rejection-option">
+            <input type="checkbox" value="ID photo is unclear or unreadable">
+            <span>ID photo is unclear or unreadable</span>
+          </label>
+          <label class="rejection-option">
+            <input type="checkbox" value="ID does not match applicant information">
+            <span>ID does not match applicant information</span>
+          </label>
+          <label class="rejection-option">
+            <input type="checkbox" value="Incomplete information provided">
+            <span>Incomplete information provided</span>
+          </label>
+          <label class="rejection-option">
+            <input type="checkbox" value="Duplicate application">
+            <span>Duplicate application</span>
+          </label>
+          <label class="rejection-option">
+            <input type="checkbox" value="Does not qualify for selected discount type">
+            <span>Does not qualify for selected discount type</span>
+          </label>
+        </div>
+
+        <label for="customRejectionReason" style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">
+          Additional Notes (Optional):
+        </label>
+        <textarea 
+          id="customRejectionReason" 
+          placeholder="Enter any additional details about the rejection..."
+          style="width: 100%; min-height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; font-size: 14px; resize: vertical;"
+        ></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="cancelRejection()">Cancel</button>
+        <button class="btn-danger" onclick="submitRejection()">Submit Rejection</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Confirmation Modal -->
   <div id="confirmModal" class="modal">
     <div class="modal-content confirm-modal-content">

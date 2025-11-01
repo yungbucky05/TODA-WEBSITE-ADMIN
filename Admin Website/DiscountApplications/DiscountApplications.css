@@ -713,3 +713,41 @@ body {
     opacity: 1;
   }
 }
+
+/* Rejection Modal Styles */
+.rejection-option {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f8f9fa;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.rejection-option:hover {
+  background: #e9ecef;
+  border-color: #dee2e6;
+}
+
+.rejection-option input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-right: 12px;
+  cursor: pointer;
+  accent-color: #dc3545;
+}
+
+.rejection-option input[type="checkbox"]:checked + span {
+  color: #dc3545;
+  font-weight: 500;
+}
+
+.rejection-option span {
+  flex: 1;
+  font-size: 14px;
+  color: #495057;
+  user-select: none;
+}
