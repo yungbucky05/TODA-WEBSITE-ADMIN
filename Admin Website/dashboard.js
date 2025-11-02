@@ -1,6 +1,6 @@
 // Import Firebase SDKs
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
-import { getDatabase, ref, onValue, update, query, orderByChild } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
+import { getDatabase, ref, onValue, update, query, orderByChild, get } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
 
 // Firebase config
 const firebaseConfig = {
@@ -442,6 +442,47 @@ function loadStats() {
   onValue(queueRef, (snapshot) => {
     const count = snapshot.exists() ? Object.keys(snapshot.val()).length : 0;
     document.getElementById('queueCount').textContent = count;
+  });
+
+  // Load flagged accounts count from separate collections
+  const driverFlagsRef = ref(db, 'driverFlags');
+  const userFlagsRef = ref(db, 'userFlags');
+  
+  get(driverFlagsRef).then((driverFlagsSnapshot) => {
+    let flaggedCount = 0;
+    
+    if (driverFlagsSnapshot.exists()) {
+      const driverFlags = driverFlagsSnapshot.val();
+      Object.keys(driverFlags).forEach(driverId => {
+        const flags = driverFlags[driverId];
+        Object.keys(flags).forEach(flagId => {
+          if (flags[flagId].status === 'active' && flags[flagId].severity === 'critical') {
+            flaggedCount++;
+          }
+        });
+      });
+    }
+    
+    // Also count customer flags
+    get(userFlagsRef).then((userFlagsSnapshot) => {
+      if (userFlagsSnapshot.exists()) {
+        const userFlags = userFlagsSnapshot.val();
+        Object.keys(userFlags).forEach(userId => {
+          const flags = userFlags[userId];
+          Object.keys(flags).forEach(flagId => {
+            if (flags[flagId].status === 'active' && flags[flagId].severity === 'critical') {
+              flaggedCount++;
+            }
+          });
+        });
+      }
+      
+      const flaggedBadge = document.getElementById('flaggedBadge');
+      if (flaggedBadge) {
+        flaggedBadge.textContent = flaggedCount;
+        flaggedBadge.style.display = flaggedCount > 0 ? 'flex' : 'none';
+      }
+    });
   });
 }
 
