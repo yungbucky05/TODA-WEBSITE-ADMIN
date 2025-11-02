@@ -12,7 +12,9 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="logo">
-        <div class="logo-icon">🚖</div>
+        <div class="logo-icon">
+          <img src="moto_logo.png" alt="TODA Logo">
+        </div>
         <div class="logo-text">
           <h2>TODA</h2>
           <p>Admin Panel</p>
@@ -44,6 +46,11 @@
           <span class="nav-icon">🎫</span>
           <span class="nav-label">Discounts</span>
           <span class="nav-badge" id="discountBadge">0</span>
+        </a>
+        <a href="FlaggedAccounts/FlaggedAccounts.html" class="nav-item">
+          <span class="nav-icon">🚩</span>
+          <span class="nav-label">Flagged Accounts</span>
+          <span class="nav-badge" id="flaggedBadge">0</span>
         </a>
         <a href="FareMatrix/FareMatrix.html" class="nav-item">
           <span class="nav-icon">💵</span>
@@ -186,6 +193,14 @@
               <div class="action-text">
                 <h4>Discount Applications</h4>
                 <p>Review and approve discounts</p>
+              </div>
+            </div>
+            
+            <div class="action-card" onclick="navigateTo('FlaggedAccounts/FlaggedAccounts.html')">
+              <div class="action-icon red">🚩</div>
+              <div class="action-text">
+                <h4>Flagged Accounts</h4>
+                <p>Monitor problematic accounts</p>
               </div>
             </div>
             

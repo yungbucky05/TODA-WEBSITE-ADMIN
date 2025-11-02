@@ -97,21 +97,25 @@ function loadBookings() {
   });
 
   // Load drivers for filter dropdown
-  const driversRef = ref(db, 'users');
+  const driversRef = ref(db, 'drivers');
   onValue(driversRef, (snapshot) => {
     if (snapshot.exists()) {
-      const users = snapshot.val();
+      const drivers = snapshot.val();
       allDrivers = [];
 
-      Object.keys(users).forEach(userId => {
-        const user = users[userId];
-        if (user.role === 'driver') {
-          allDrivers.push({
-            id: userId,
-            driverName: user.fullName || 'Unknown',
-            driverId: user.rfidNumber || userId
-          });
-        }
+      Object.keys(drivers).forEach(driverId => {
+        const driver = drivers[driverId];
+        // Use driver data from drivers collection
+        const driverName = driver.driverName || driver.name || `${driver.firstName || ''} ${driver.lastName || ''}`.trim() || 'Unknown';
+        const rfid = driver.rfidNumber || driver.rfidUID || driverId; // Backward compatibility
+        
+        allDrivers.push({
+          id: driverId,
+          driverName: driverName,
+          driverId: rfid,
+          todaNumber: driver.todaNumber || 'N/A',
+          phoneNumber: driver.phoneNumber || 'N/A'
+        });
       });
 
       // Populate driver dropdown

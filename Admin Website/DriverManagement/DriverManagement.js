@@ -1,6 +1,6 @@
 // Import Firebase SDKs
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
-import { getDatabase, ref, onValue, update, push, set } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
+import { getDatabase, ref, onValue, update, push, set, get } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
 import { getStorage, ref as storageRef, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js";
 
 // Firebase config
@@ -217,7 +217,7 @@ function loadDrivers() {
         
         // Check if this is a new pending driver that needs notification
         if (driver.verificationStatus === 'pending' && !processedDriverIds.has(driverId)) {
-          const driverName = driver.name || driver.fullName || 'Unknown Driver';
+          const driverName = driver.driverName || driver.name || 'Unknown Driver';
           createDriverNotification(driverId, driverName, 'registration');
           processedDriverIds.add(driverId);
         }
@@ -252,7 +252,7 @@ function loadDrivers() {
               driver.autoResetAt = new Date().toISOString();
               
               // Create notification for document resubmission
-              const driverName = driver.name || driver.fullName || 'Unknown Driver';
+              const driverName = driver.driverName || driver.name || 'Unknown Driver';
               createDriverNotification(driverId, driverName, 'resubmission');
               
               console.log(`Auto-reset driver ${driverId} from rejected to pending`);
@@ -285,8 +285,10 @@ function updateStats() {
   const pendingVerification = allDrivers.filter(d => !d.verificationStatus || d.verificationStatus === 'pending').length;
   // Only count drivers who explicitly reported RFID as missing
   const rfidMissing = allDrivers.filter(d => (d.rfidMissing === true) || (d.rfidReported === true)).length;
-  const needRfid = allDrivers.filter(d => (!d.rfidNumber && !d.rfidUID) || d.rfidNumber === '' || d.rfidUID === '').length;
-  const activeDrivers = allDrivers.filter(d => (d.rfidNumber || d.rfidUID) && d.isActive && !d.rfidMissing && !d.rfidReported).length;
+  // Count drivers who need RFID: Check if they have rfidNumber with actual value
+  const needRfid = allDrivers.filter(d => !d.rfidNumber || d.rfidNumber === '').length;
+  // Count active drivers: has rfidNumber, is active, and hasn't reported missing/lost RFID
+  const activeDrivers = allDrivers.filter(d => d.rfidNumber && d.isActive && !d.rfidMissing && !d.rfidReported).length;
 
   document.getElementById('totalDrivers').textContent = totalDrivers;
   document.getElementById('pendingVerification').textContent = pendingVerification;
@@ -1081,7 +1083,6 @@ window.handleRfidAssignment = async function() {
     const driverRef = ref(db, `drivers/${selectedDriver.id}`);
     await update(driverRef, {
       rfidNumber: rfidNumber,
-      rfidUID: rfidNumber,
       hasRfidAssigned: true,
       needsRfidAssignment: false,
       isActive: true,
@@ -1223,7 +1224,6 @@ window.assignRfid = async function() {
     const driverRef = ref(db, `drivers/${selectedDriver.id}`);
     await update(driverRef, {
       rfidNumber: rfidNumber,
-      rfidUID: rfidNumber,
       hasRfidAssigned: true,
       needsRfidAssignment: false,
       rfidAssignedAt: new Date().toISOString(),
@@ -1347,7 +1347,7 @@ window.addEventListener('click', (event) => {
 // RFID Reassignment Functions
 let reassignDriverData = null;
 
-window.showReassignRfidModal = function(driverId) {
+window.showReassignRfidModal = async function(driverId) {
   const driver = allDrivers.find(d => d.id === driverId);
   if (!driver) return;
 
@@ -1374,34 +1374,43 @@ window.showReassignRfidModal = function(driverId) {
   // Display current RFID
   document.getElementById('currentRfidDisplay').textContent = currentRfid;
 
-  // Display RFID history if exists
-  const rfidHistory = driver.rfidHistory || [];
+  // Display RFID history from separate collection
+  const rfidHistoryRef = ref(db, `rfidHistory/${driver.id}`);
   const historySection = document.getElementById('rfidHistorySection');
   const historyList = document.getElementById('rfidHistoryList');
   
-  if (rfidHistory.length > 0) {
-    historySection.style.display = 'block';
-    historyList.innerHTML = rfidHistory.map((entry, index) => {
-      const replacedDate = new Date(entry.replacedAt);
-      const formattedDate = replacedDate.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-      
-      return `
-        <div class="rfid-history-item">
-          <div>
-            <div class="rfid-history-number">${entry.rfid}</div>
-            <div class="rfid-history-date">Replaced on ${formattedDate}</div>
+  try {
+    const historySnapshot = await get(rfidHistoryRef);
+    
+    if (historySnapshot.exists()) {
+      const rfidHistory = Object.values(historySnapshot.val());
+      historySection.style.display = 'block';
+      historyList.innerHTML = rfidHistory.map((entry, index) => {
+        const reassignedDate = new Date(entry.reassignedAt);
+        const formattedDate = reassignedDate.toLocaleDateString('en-US', { 
+          month: 'short', 
+          day: 'numeric', 
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        
+        return `
+          <div class="rfid-history-item">
+            <div>
+              <div class="rfid-history-number">${entry.oldRfid}</div>
+              <div class="rfid-history-date">Replaced on ${formattedDate}</div>
+              <div class="rfid-history-reason">${entry.reason || 'RFID reassigned'}</div>
+            </div>
+            <div class="rfid-history-badge">Old RFID #${index + 1}</div>
           </div>
-          <div class="rfid-history-badge">Old RFID #${index + 1}</div>
-        </div>
-      `;
-    }).join('');
-  } else {
+        `;
+      }).join('');
+    } else {
+      historySection.style.display = 'none';
+    }
+  } catch (error) {
+    console.error('Error loading RFID history:', error);
     historySection.style.display = 'none';
   }
 
@@ -1507,22 +1516,12 @@ window.confirmReassignRfid = async function() {
     // Update driver's RFID in Firebase
     const driverRef = ref(db, `drivers/${reassignDriverData.id}`);
     
-    // Get existing RFID history array or create new one
-    const existingHistory = reassignDriverData.rfidHistory || [];
-    existingHistory.push({
-      rfid: currentRfid,
-      replacedAt: timestamp,
-      replacedBy: 'Admin'
-    });
-    
     await update(driverRef, {
       rfidNumber: newRfidNumber,
-      rfidUID: newRfidNumber,
       rfidReassignedAt: timestamp,
       rfidReassignedBy: 'Admin',
       previousRfid: currentRfid,
-      rfidHistory: existingHistory, // Array of all previous RFIDs
-      rfidReassignmentCount: existingHistory.length,
+      rfidReassignmentCount: (reassignDriverData.rfidReassignmentCount || 0) + 1,
       // Clear RFID missing flags
       needsRfidAssignment: false,
       rfidMissing: false,
@@ -1535,7 +1534,7 @@ window.confirmReassignRfid = async function() {
       oldRfid: currentRfid,
       newRfid: newRfidNumber,
       reason: 'RFID card lost/replaced',
-      historyCount: existingHistory.length
+      historyCount: (reassignDriverData.rfidReassignmentCount || 0) + 1
     });
 
     statusDiv.textContent = '✅ RFID reassigned successfully!';
