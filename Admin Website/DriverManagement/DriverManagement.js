@@ -310,9 +310,11 @@ function applyFilters() {
       driver.firstName?.toLowerCase().includes(searchQuery) ||
       driver.lastName?.toLowerCase().includes(searchQuery) ||
       driver.phoneNumber?.toLowerCase().includes(searchQuery) ||
+      driver.email?.toLowerCase().includes(searchQuery) ||
       driver.rfidNumber?.toLowerCase().includes(searchQuery) ||
       driver.rfidUID?.toLowerCase().includes(searchQuery) ||
       driver.plateNumber?.toLowerCase().includes(searchQuery) ||
+      driver.tricyclePlateNumber?.toLowerCase().includes(searchQuery) ||
       driver.licenseNumber?.toLowerCase().includes(searchQuery) ||
       driver.todaNumber?.toLowerCase().includes(searchQuery);
 
@@ -419,7 +421,7 @@ function displayDrivers() {
         <div class="driver-header">
           <div>
             <div class="driver-name">${fullName}</div>
-            <div class="driver-email">${driver.phoneNumber || 'No phone'}</div>
+            <div class="driver-email">${driver.email || driver.phoneNumber || 'No contact info'}</div>
           </div>
           <span class="driver-status ${statusClass}">${statusText}</span>
         </div>
@@ -428,13 +430,19 @@ function displayDrivers() {
             <span class="info-label">Phone:</span> ${driver.phoneNumber || 'N/A'}
           </div>
           <div class="info-item">
+            <span class="info-label">Email:</span> ${driver.email || 'N/A'}
+          </div>
+          <div class="info-item">
+            <span class="info-label">Tricycle Plate:</span> ${driver.tricyclePlateNumber || 'N/A'}
+          </div>
+          <div class="info-item">
+            <span class="info-label">License:</span> ${driver.licenseNumber || 'N/A'}
+          </div>
+          <div class="info-item">
+            <span class="info-label">TODA #:</span> ${driver.todaNumber || 'Not assigned'}
+          </div>
+          <div class="info-item">
             <span class="info-label">RFID:</span> ${rfidDisplay}${rfidMissing ? ' <span class="rfid-missing-tag">❌ Missing</span>' : ''}
-          </div>
-          <div class="info-item">
-            <span class="info-label">License Number:</span> ${driver.licenseNumber || 'N/A'}
-          </div>
-          <div class="info-item">
-            <span class="info-label">TODA Number:</span> ${driver.todaNumber || 'Not assigned'}
           </div>
         </div>
         ${reassignButton}
@@ -619,11 +627,76 @@ window.showDriverDetails = async function(driverId) {
     verificationBadge = '<span class="verification-badge rejected">❌ Rejected</span>';
   }
 
+  // Load selfie photo if available
+  let selfiePhotoHTML = '<div class="document-viewer no-image">No selfie photo uploaded</div>';
+  if (selectedDriver.selfiePhotoURL) {
+    try {
+      selfiePhotoHTML = `
+        <div class="document-viewer">
+          <img src="${selectedDriver.selfiePhotoURL}" alt="Driver Selfie" />
+        </div>
+      `;
+    } catch (error) {
+      selfiePhotoHTML = '<div class="document-viewer no-image">Error loading selfie photo</div>';
+    }
+  }
+
+  // Format dates
+  const formatDate = (timestamp) => {
+    if (!timestamp || timestamp === 0) return 'N/A';
+    return new Date(timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const registrationDate = formatDate(selectedDriver.registrationDate);
+  const licenseExpiryDate = formatDate(selectedDriver.licenseExpiry);
+  const lastPaymentDateFormatted = formatDate(selectedDriver.lastPaymentDate);
+
+  // Format balance
+  const balanceDisplay = selectedDriver.balance !== undefined ? `₱${selectedDriver.balance.toFixed(2)}` : 'N/A';
+
+  // Account & Payment Information section (only show if verified)
+  const accountPaymentSection = verificationStatus === 'verified' ? `
+    <div class="document-section">
+      <h3>� Account & Payment Information</h3>
+      <div class="info-grid">
+        <div class="info-item">
+          <div class="info-label">Account Balance</div>
+          <div class="info-value">${balanceDisplay}</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Payment Mode</div>
+          <div class="info-value">${selectedDriver.paymentMode || 'Not set'}</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Last Payment Date</div>
+          <div class="info-value">${lastPaymentDateFormatted}</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Can Go Online</div>
+          <div class="info-value">${selectedDriver.canGoOnline ? '✅ Yes' : '❌ No'}</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Active Status</div>
+          <div class="info-value">${selectedDriver.isActive ? '✅ Active' : '⚠️ Inactive'}</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Verification Status</div>
+          <div class="info-value">${selectedDriver.status || selectedDriver.verificationStatus || 'N/A'}</div>
+        </div>
+      </div>
+    </div>
+  ` : '';
+
   // Store driver details for Step 1
   selectedDriver.driverDetailsHTML = `
     <div class="document-section">
-      <h3>📄 Driver's License</h3>
+      <h3>� Driver's License Photo</h3>
       ${licensePhotoHTML}
+    </div>
+
+    <div class="document-section">
+      <h3>🤳 Driver Selfie Photo</h3>
+      ${selfiePhotoHTML}
     </div>
 
     <div class="document-section">
@@ -634,16 +707,46 @@ window.showDriverDetails = async function(driverId) {
           <div class="info-value">${fullName}</div>
         </div>
         <div class="info-item">
+          <div class="info-label">Email Address</div>
+          <div class="info-value">${selectedDriver.email || 'N/A'}</div>
+        </div>
+        <div class="info-item">
           <div class="info-label">Phone Number</div>
           <div class="info-value">${selectedDriver.phoneNumber || 'N/A'}</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Emergency Contact</div>
+          <div class="info-value">${selectedDriver.emergencyContact || 'N/A'}</div>
         </div>
         <div class="info-item">
           <div class="info-label">Address</div>
           <div class="info-value">${selectedDriver.address || 'N/A'}</div>
         </div>
         <div class="info-item">
+          <div class="info-label">Registration Date</div>
+          <div class="info-value">${registrationDate}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="document-section">
+      <h3>� Driver & Vehicle Information</h3>
+      <div class="info-grid">
+        <div class="info-item">
           <div class="info-label">License Number</div>
           <div class="info-value">${selectedDriver.licenseNumber || 'N/A'}</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">License Expiry</div>
+          <div class="info-value">${licenseExpiryDate}</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Years of Experience</div>
+          <div class="info-value">${selectedDriver.yearsOfExperience || 0} years</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Tricycle Plate Number</div>
+          <div class="info-value">${selectedDriver.tricyclePlateNumber || 'N/A'}</div>
         </div>
         <div class="info-item">
           <div class="info-label">TODA Number</div>
@@ -655,6 +758,8 @@ window.showDriverDetails = async function(driverId) {
         </div>
       </div>
     </div>
+
+    ${accountPaymentSection}
   `;
 
   // Show modal first
@@ -1369,12 +1474,24 @@ window.showReassignRfidModal = async function(driverId) {
       <div class="info-value">${fullName}</div>
     </div>
     <div class="info-item">
+      <div class="info-label">Email</div>
+      <div class="info-value">${driver.email || 'N/A'}</div>
+    </div>
+    <div class="info-item">
       <div class="info-label">Phone Number</div>
       <div class="info-value">${driver.phoneNumber || 'N/A'}</div>
     </div>
     <div class="info-item">
+      <div class="info-label">Tricycle Plate Number</div>
+      <div class="info-value">${driver.tricyclePlateNumber || 'N/A'}</div>
+    </div>
+    <div class="info-item">
       <div class="info-label">TODA Number</div>
       <div class="info-value">${driver.todaNumber || 'N/A'}</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">License Number</div>
+      <div class="info-value">${driver.licenseNumber || 'N/A'}</div>
     </div>
   `;
 

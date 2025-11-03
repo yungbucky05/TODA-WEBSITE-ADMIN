@@ -191,6 +191,7 @@ function formatAmount(amount) {
 function applyFilters() {
   const searchQuery = document.getElementById('searchInput').value.toLowerCase();
   const dateFilter = document.getElementById('dateFilter').value;
+  const paymentTypeFilter = document.getElementById('paymentTypeFilter').value;
 
   filteredContributions = allContributions.filter(contribution => {
     // Search filter
@@ -207,7 +208,19 @@ function applyFilters() {
       matchesDate = contributionDate.toDateString() === filterDate.toDateString();
     }
 
-    return matchesSearch && matchesDate;
+    // Payment type filter
+    let matchesPaymentType = true;
+    if (paymentTypeFilter !== 'all') {
+      if (paymentTypeFilter === 'pay_later') {
+        // paid = false means pay_later (unpaid)
+        matchesPaymentType = contribution.paid === false;
+      } else if (paymentTypeFilter === 'paid') {
+        // no paid field means pay_every_trip (already paid/settled)
+        matchesPaymentType = contribution.paid === undefined || contribution.paid === null;
+      }
+    }
+
+    return matchesSearch && matchesDate && matchesPaymentType;
   });
 
   // If a driver is selected, update their stats
@@ -335,6 +348,7 @@ window.clearFilters = function() {
   selectedDriver = null;
   document.getElementById('searchInput').value = '';
   document.getElementById('dateFilter').value = '';
+  document.getElementById('paymentTypeFilter').value = 'all';
   document.getElementById('driverStatsCard').style.display = 'none';
   applyFilters();
 }
@@ -362,6 +376,16 @@ function displayContributions() {
     const timestamp = parseInt(contribution.timestamp) * 1000 || 0;
     const date = new Date(timestamp);
 
+    // Determine payment type based on 'paid' field
+    let paymentTypeBadge = '';
+    if (contribution.paid === false) {
+      // paid = false means pay_later (unpaid)
+      paymentTypeBadge = '<span class="payment-type-badge pay-later">💳 Pay Later (Unpaid)</span>';
+    } else if (contribution.paid === undefined || contribution.paid === null) {
+      // no paid field means pay_every_trip (already paid/settled)
+      paymentTypeBadge = '<span class="payment-type-badge paid">✅ Paid</span>';
+    }
+
     return `
       <div class="contribution-card">
         <div class="contribution-header">
@@ -369,7 +393,10 @@ function displayContributions() {
             <div class="driver-name">${contribution.driverName || 'Unknown Driver'}</div>
             <div class="info-value" style="color: #666; font-size: 14px;">${date.toLocaleString()}</div>
           </div>
-          <div class="contribution-amount">${formatAmount(parseFloat(contribution.amount) || 0)}</div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            ${paymentTypeBadge}
+            <div class="contribution-amount">${formatAmount(parseFloat(contribution.amount) || 0)}</div>
+          </div>
         </div>
         <div class="contribution-info">
           <div class="info-item">
@@ -483,6 +510,7 @@ window.changeItemsPerPage = function() {
 // Event listeners
 document.getElementById('searchInput').addEventListener('input', applyFilters);
 document.getElementById('dateFilter').addEventListener('change', applyFilters);
+document.getElementById('paymentTypeFilter').addEventListener('change', applyFilters);
 document.getElementById('driverFilter').addEventListener('change', function() {
   const selectedDriverId = this.value;
   if (selectedDriverId) {

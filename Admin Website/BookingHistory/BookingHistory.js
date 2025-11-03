@@ -169,9 +169,9 @@ function applyFilters() {
     // Status filter
     const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
     
-    // Trip type filter
-    const tripType = booking.tripType || 'regular';
-    const matchesTripType = tripTypeFilter === 'all' || tripType === tripTypeFilter;
+    // Booking app filter (replacing trip type filter)
+    const bookingApp = booking.bookingApp || 'unknown';
+    const matchesTripType = tripTypeFilter === 'all' || bookingApp === tripTypeFilter;
 
     // Driver filter
     const matchesDriver = !driverFilter || booking.driverName === driverFilter;
@@ -205,7 +205,13 @@ function updateActiveFilters() {
   }
   
   if (tripTypeFilter !== 'all') {
-    filters.push(`<div class="filter-chip">Trip Type: ${tripTypeFilter} <button onclick="document.getElementById('tripTypeFilter').value='all'; applyFilters();">×</button></div>`);
+    const sourceLabels = {
+      'passengerApp': 'Online Booking',
+      'barkerApp': 'On Site',
+      'unknown': 'Unknown Source'
+    };
+    const sourceLabel = sourceLabels[tripTypeFilter] || tripTypeFilter;
+    filters.push(`<div class="filter-chip">Booking Source: ${sourceLabel} <button onclick="document.getElementById('tripTypeFilter').value='all'; applyFilters();">×</button></div>`);
   }
 
   if (dateFilter) {
@@ -249,10 +255,17 @@ function displayBookings() {
     const statusClass = `status-${status}`;
     const cardClass = status;
     const date = new Date(booking.timestamp || 0);
-    const tripType = booking.tripType || 'regular';
-    const tripTypeBadge = tripType === 'special' 
-      ? '<span class="trip-type-badge special">⭐ Special Trip</span>' 
-      : '<span class="trip-type-badge regular">🚗 Regular Trip</span>';
+    const bookingApp = booking.bookingApp || 'unknown';
+    
+    // Create booking app badge based on the bookingApp field
+    let bookingAppBadge = '';
+    if (bookingApp === 'passengerApp') {
+      bookingAppBadge = '<span class="trip-type-badge passenger-app">📱 Online Booking</span>';
+    } else if (bookingApp === 'barkerApp') {
+      bookingAppBadge = '<span class="trip-type-badge barker-app">🚗 On Site</span>';
+    } else {
+      bookingAppBadge = '<span class="trip-type-badge unknown">❓ Unknown Source</span>';
+    }
 
     return `
       <div class="booking-card ${cardClass}" onclick="showBookingDetails('${booking.id}')">
@@ -262,7 +275,7 @@ function displayBookings() {
             <div class="booking-date">${date.toLocaleString()}</div>
           </div>
           <div style="display: flex; gap: 8px; align-items: center;">
-            ${tripTypeBadge}
+            ${bookingAppBadge}
             <span class="booking-status ${statusClass}">${status}</span>
           </div>
         </div>
@@ -384,11 +397,17 @@ window.showBookingDetails = function(bookingId) {
   const status = booking.status || 'active';
   const tripType = booking.tripType || 'regular';
   const isRegular = tripType === 'regular';
+  const bookingApp = booking.bookingApp || 'unknown';
   
-  // Get trip type badge
-  const tripTypeBadge = tripType === 'special' 
-    ? '<span class="trip-type-badge special">⭐ Special Trip (Private)</span>' 
-    : '<span class="trip-type-badge regular">🚗 Regular Trip (Ride Pooling)</span>';
+  // Get booking app badge
+  let bookingAppBadge = '';
+  if (bookingApp === 'passengerApp') {
+    bookingAppBadge = '<span class="trip-type-badge passenger-app">📱 Online Booking</span>';
+  } else if (bookingApp === 'barkerApp') {
+    bookingAppBadge = '<span class="trip-type-badge barker-app">🚗 On Site</span>';
+  } else {
+    bookingAppBadge = '<span class="trip-type-badge unknown">❓ Unknown Source</span>';
+  }
 
   // Build linked passengers section for regular trips
   let linkedPassengersSection = '';
@@ -442,7 +461,7 @@ window.showBookingDetails = function(bookingId) {
 
   document.getElementById('modalBody').innerHTML = `
     <div class="detail-section">
-      <h3>Booking Information ${tripTypeBadge}</h3>
+      <h3>Booking Information ${bookingAppBadge}</h3>
       <div class="detail-grid">
         <div class="detail-item">
           <div class="detail-label">Booking ID</div>
@@ -451,6 +470,10 @@ window.showBookingDetails = function(bookingId) {
         <div class="detail-item">
           <div class="detail-label">Status</div>
           <div class="detail-value">${status.toUpperCase()}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Booked Via</div>
+          <div class="detail-value">${bookingApp === 'passengerApp' ? 'Online Booking' : bookingApp === 'barkerApp' ? 'On Site' : 'Unknown'}</div>
         </div>
         <div class="detail-item">
           <div class="detail-label">Date & Time</div>
