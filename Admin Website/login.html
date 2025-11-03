@@ -13,33 +13,48 @@
       <div class="login-branding">
         <div class="brand-content">
           <div class="brand-logo">
-            <div class="logo-icon-large">🚖</div>
-            <h1>TODA</h1>
-            <p class="brand-subtitle">Admin Panel</p>
+            <div class="logo-icon-large">
+              <img src="moto_logo.png" alt="TODA logo">
+            </div>
+            <div class="brand-identity">
+              <h1>TODA Admin</h1>
+              <p class="brand-subtitle">Operations Command Center</p>
+            </div>
           </div>
-          <div class="brand-features">
-            <div class="feature-item">
-              <span class="feature-icon">👥</span>
-              <div class="feature-text">
+          <p class="brand-description">
+            Monitor dispatching, contributions, compliance, and alerts in one modern console built for transport cooperatives.
+          </p>
+          <div class="module-grid">
+            <div class="module-card drivers">
+              <div class="module-icon">👥</div>
+              <div>
                 <h3>Driver Management</h3>
-                <p>Manage and verify drivers</p>
+                <p>Verify registrations, assign RFID tags, and keep compliance up to date.</p>
               </div>
             </div>
-            <div class="feature-item">
-              <span class="feature-icon">📋</span>
-              <div class="feature-text">
-                <h3>Booking System</h3>
-                <p>Track all bookings</p>
+            <div class="module-card bookings">
+              <div class="module-icon">📋</div>
+              <div>
+                <h3>Booking History</h3>
+                <p>Stay on top of requests, approvals, and completed trips in real time.</p>
               </div>
             </div>
-            <div class="feature-item">
-              <span class="feature-icon">💰</span>
-              <div class="feature-text">
-                <h3>Contributions</h3>
-                <p>Monitor contributions</p>
+            <div class="module-card contributions">
+              <div class="module-icon">💰</div>
+              <div>
+                <h3>Contributions Ledger</h3>
+                <p>Track cooperative contributions and flag gaps before they escalate.</p>
+              </div>
+            </div>
+            <div class="module-card queue">
+              <div class="module-icon">📝</div>
+              <div>
+                <h3>Queue Control</h3>
+                <p>Balance the dispatch queue and keep routes running smoothly.</p>
               </div>
             </div>
           </div>
+          
         </div>
       </div>
 
@@ -47,8 +62,8 @@
       <div class="login-form-container">
         <div class="login-form-wrapper">
           <div class="login-header">
-            <h2>Welcome Back</h2>
-            <p>Sign in to access your admin dashboard</p>
+            <h2>Sign in to your console</h2>
+            <p>Use the phone number and password issued to your administrative account.</p>
           </div>
 
           <form id="loginForm" class="login-form">
@@ -56,10 +71,10 @@
               <label for="phoneNumber">Phone Number</label>
               <div class="input-wrapper">
                 <span class="input-icon">📱</span>
-                <input 
-                  type="tel" 
-                  id="phoneNumber" 
-                  name="phoneNumber" 
+                <input
+                  type="tel"
+                  id="phoneNumber"
+                  name="phoneNumber"
                   placeholder="Enter your phone number"
                   required
                   autocomplete="tel"
@@ -73,17 +88,17 @@
               <label for="password">Password</label>
               <div class="input-wrapper">
                 <span class="input-icon">🔒</span>
-                <input 
-                  type="password" 
-                  id="password" 
-                  name="password" 
+                <input
+                  type="password"
+                  id="password"
+                  name="password"
                   placeholder="Enter your password"
                   required
                   autocomplete="current-password"
                 >
-                <button 
-                  type="button" 
-                  class="toggle-password" 
+                <button
+                  type="button"
+                  class="toggle-password"
                   id="togglePassword"
                   aria-label="Toggle password visibility"
                 >
@@ -106,9 +121,7 @@
             </button>
           </form>
 
-          <div class="login-footer">
-            <p>Don't have an account? <a href="register.html" style="color: #667eea; text-decoration: none; font-weight: 500;">Register here</a></p>
-          </div>
+          
         </div>
       </div>
     </div>

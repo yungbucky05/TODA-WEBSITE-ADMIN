@@ -81,6 +81,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   const loginBtn = document.getElementById('loginBtn');
   const errorMessage = document.getElementById('errorMessage');
   const rememberMeCheckbox = document.getElementById('rememberMe');
+  let messageHideTimeout = null;
 
   // Check if user just logged out and show notification
   if (sessionStorage.getItem('justLoggedOut') === 'true') {
@@ -602,20 +603,34 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Show error message
   function showError(message) {
+    if (messageHideTimeout) {
+      clearTimeout(messageHideTimeout);
+      messageHideTimeout = null;
+    }
+    errorMessage.style.background = '#fef2f2';
+    errorMessage.style.color = '#b91c1c';
+    errorMessage.style.borderColor = '#fecaca';
+    errorMessage.style.boxShadow = '0 18px 35px rgba(248, 113, 113, 0.25)';
     errorMessage.textContent = message;
     errorMessage.classList.add('show');
     
     // Auto-hide after 5 seconds
-    setTimeout(() => {
+    messageHideTimeout = setTimeout(() => {
       errorMessage.classList.remove('show');
+      messageHideTimeout = null;
     }, 5000);
   }
 
   // Show success message
   function showSuccess(message) {
-    errorMessage.style.background = '#d1fae5';
+    if (messageHideTimeout) {
+      clearTimeout(messageHideTimeout);
+      messageHideTimeout = null;
+    }
+    errorMessage.style.background = '#ecfdf5';
     errorMessage.style.color = '#065f46';
-    errorMessage.style.borderLeftColor = '#10b981';
+    errorMessage.style.borderColor = '#a7f3d0';
+    errorMessage.style.boxShadow = '0 18px 35px rgba(52, 211, 153, 0.25)';
     errorMessage.textContent = message;
     errorMessage.classList.add('show');
   }
