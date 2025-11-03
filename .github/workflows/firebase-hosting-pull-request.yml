@@ -17,4 +17,5 @@ jobs:
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TODA_CONTRIBUTION_SYSTEM }}
+          entryPoint: 'Admin Website'
           projectId: toda-contribution-system
