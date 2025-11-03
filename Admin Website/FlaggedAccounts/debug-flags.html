@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debug Flagged Accounts System</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Courier New', monospace;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 20px;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: #4ec9b0;
+      margin-bottom: 10px;
+    }
+
+    h2 {
+      color: #569cd6;
+      margin-top: 30px;
+      margin-bottom: 15px;
+      padding-bottom: 5px;
+      border-bottom: 2px solid #569cd6;
+    }
+
+    .btn {
+      background: #0e639c;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      margin: 10px 10px 10px 0;
+      border-radius: 5px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 14px;
+    }
+
+    .btn:hover {
+      background: #1177bb;
+    }
+
+    .section {
+      background: #252526;
+      padding: 20px;
+      margin: 15px 0;
+      border-radius: 8px;
+      border-left: 4px solid #569cd6;
+    }
+
+    .debug-output {
+      background: #1e1e1e;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 10px 0;
+      border: 1px solid #3e3e42;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .debug-item {
+      margin: 10px 0;
+      padding: 10px;
+      background: #2d2d30;
+      border-radius: 4px;
+    }
+
+    .label {
+      color: #4ec9b0;
+      font-weight: bold;
+    }
+
+    .value {
+      color: #ce9178;
+    }
+
+    .error {
+      color: #f48771;
+    }
+
+    .success {
+      color: #4ec9b0;
+    }
+
+    .warning {
+      color: #dcdcaa;
+    }
+
+    .count {
+      display: inline-block;
+      background: #0e639c;
+      padding: 2px 8px;
+      border-radius: 3px;
+      margin-left: 10px;
+      font-weight: bold;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 15px 0;
+    }
+
+    th, td {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid #3e3e42;
+    }
+
+    th {
+      background: #2d2d30;
+      color: #569cd6;
+      font-weight: bold;
+    }
+
+    tr:hover {
+      background: #2d2d30;
+    }
+
+    pre {
+      background: #1e1e1e;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+      border: 1px solid #3e3e42;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 Flagged Accounts Debug Tool</h1>
+    <p>Inspect database structure and troubleshoot flag detection</p>
+
+    <div class="section">
+      <button class="btn" onclick="checkTestCustomers()">1️⃣ Check Test Customers</button>
+      <button class="btn" onclick="checkTestBookings()">2️⃣ Check Test Bookings</button>
+      <button class="btn" onclick="checkUserFlags()">3️⃣ Check User Flags</button>
+      <button class="btn" onclick="runFullDiagnostic()">🚀 Run Full Diagnostic</button>
+    </div>
+
+    <div id="output"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+    import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyA9ADVig4CiO2Y3ELl3unzXajdzxCgRxHI",
+      authDomain: "toda-contribution-system.firebaseapp.com",
+      databaseURL: "https://toda-contribution-system-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "toda-contribution-system",
+      storageBucket: "toda-contribution-system.firebasestorage.app",
+      messagingSenderId: "536068566619",
+      appId: "1:536068566619:web:ff7cc576e59b76ae58997e"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const output = document.getElementById('output');
+
+    window.checkTestCustomers = async function() {
+      output.innerHTML = '<h2>👥 Test Customers</h2>';
+      
+      const usersRef = ref(db, 'users');
+      const snapshot = await get(usersRef);
+      
+      if (!snapshot.exists()) {
+        output.innerHTML += '<div class="debug-output error">❌ No users found in database!</div>';
+        return;
+      }
+
+      const users = snapshot.val();
+      const testCustomers = Object.entries(users).filter(([id, user]) => id.startsWith('testCustomer'));
+      
+      if (testCustomers.length === 0) {
+        output.innerHTML += '<div class="debug-output warning">⚠️ No test customers found. Have you created them yet?</div>';
+        return;
+      }
+
+      output.innerHTML += `<div class="debug-output success">✅ Found <span class="count">${testCustomers.length}</span> test customers</div>`;
+      
+      let html = '<table><tr><th>ID</th><th>Name</th><th>User Type</th><th>Flag Score</th><th>Flag Status</th></tr>';
+      testCustomers.forEach(([id, user]) => {
+        html += `<tr>
+          <td>${id}</td>
+          <td>${user.name || 'N/A'}</td>
+          <td class="${user.userType === 'PASSENGER' ? 'success' : 'error'}">${user.userType || 'NOT SET'}</td>
+          <td>${user.flagScore || 0}</td>
+          <td>${user.flagStatus || 'not set'}</td>
+        </tr>`;
+      });
+      html += '</table>';
+      output.innerHTML += html;
+    };
+
+    window.checkTestBookings = async function() {
+      output.innerHTML = '<h2>📦 Test Bookings</h2>';
+      
+      const bookingsRef = ref(db, 'bookings');
+      const snapshot = await get(bookingsRef);
+      
+      if (!snapshot.exists()) {
+        output.innerHTML += '<div class="debug-output error">❌ No bookings found in database!</div>';
+        return;
+      }
+
+      const bookings = snapshot.val();
+      const testBookings = Object.entries(bookings).filter(([id]) => id.startsWith('testBooking_'));
+      
+      if (testBookings.length === 0) {
+        output.innerHTML += '<div class="debug-output warning">⚠️ No test bookings found.</div>';
+        return;
+      }
+
+      output.innerHTML += `<div class="debug-output success">✅ Found <span class="count">${testBookings.length}</span> test bookings</div>`;
+      
+      // Group by customer
+      const byCustomer = {
+        testCustomer1: [],
+        testCustomer2: [],
+        testCustomer3: []
+      };
+      
+      testBookings.forEach(([id, booking]) => {
+        if (booking.customerId && byCustomer[booking.customerId]) {
+          byCustomer[booking.customerId].push({ id, ...booking });
+        }
+      });
+
+      // Analyze each customer
+      Object.entries(byCustomer).forEach(([customerId, bookings]) => {
+        if (bookings.length === 0) return;
+        
+        const noShows = bookings.filter(b => b.status === 'no-show' || b.customerNoShow).length;
+        const cancellations = bookings.filter(b => b.status === 'cancelled' && b.cancelledBy === 'customer').length;
+        const wrongPins = bookings.filter(b => b.wrongPin || b.incorrectLocation).length;
+        const nonPayment = bookings.filter(b => b.nonPayment || b.paymentStatus === 'unpaid').length;
+        const abusive = bookings.filter(b => b.abusiveCustomer || b.driverReportedAbuse).length;
+        
+        const noShowRate = ((noShows / bookings.length) * 100).toFixed(1);
+        const cancelRate = ((cancellations / bookings.length) * 100).toFixed(1);
+        const wrongPinRate = ((wrongPins / bookings.length) * 100).toFixed(1);
+        
+        output.innerHTML += `
+          <div class="debug-item">
+            <div class="label">${customerId}</div>
+            <div>Total Bookings: <span class="value">${bookings.length}</span></div>
+            <div>No-Shows: <span class="${noShows > 0 ? 'warning' : 'value'}">${noShows} (${noShowRate}%)</span> ${noShowRate > 20 ? '🚩 SHOULD FLAG' : ''}</div>
+            <div>Cancellations: <span class="${cancellations > 0 ? 'warning' : 'value'}">${cancellations} (${cancelRate}%)</span> ${cancelRate > 25 ? '🚩 SHOULD FLAG' : ''}</div>
+            <div>Wrong PINs: <span class="${wrongPins > 0 ? 'warning' : 'value'}">${wrongPins} (${wrongPinRate}%)</span> ${wrongPinRate > 30 ? '🚩 SHOULD FLAG' : ''}</div>
+            <div>Non-Payment: <span class="${nonPayment > 0 ? 'error' : 'value'}">${nonPayment}</span> ${nonPayment > 0 ? '🚩 SHOULD FLAG' : ''}</div>
+            <div>Abusive: <span class="${abusive > 0 ? 'error' : 'value'}">${abusive}</span> ${abusive > 0 ? '🚩 SHOULD FLAG' : ''}</div>
+          </div>
+        `;
+      });
+    };
+
+    window.checkUserFlags = async function() {
+      output.innerHTML = '<h2>🚩 User Flags</h2>';
+      
+      const userFlagsRef = ref(db, 'userFlags');
+      const snapshot = await get(userFlagsRef);
+      
+      if (!snapshot.exists()) {
+        output.innerHTML += '<div class="debug-output warning">⚠️ No userFlags collection found. This means auto-detection hasn\'t created any flags yet.</div>';
+        output.innerHTML += '<div class="debug-output">Try running Auto-Detection from the Flagged Accounts page.</div>';
+        return;
+      }
+
+      const userFlags = snapshot.val();
+      let totalFlags = 0;
+      let html = '<div class="debug-output success">✅ userFlags collection exists!</div>';
+      
+      Object.entries(userFlags).forEach(([userId, flags]) => {
+        const flagCount = Object.keys(flags).length;
+        totalFlags += flagCount;
+        
+        html += `<div class="debug-item">
+          <div class="label">${userId} <span class="count">${flagCount} flags</span></div>`;
+        
+        Object.entries(flags).forEach(([flagId, flag]) => {
+          html += `
+            <div style="margin-left: 20px; margin-top: 10px;">
+              <div>Flag ID: <span class="value">${flagId}</span></div>
+              <div>Type: <span class="value">${flag.type}</span></div>
+              <div>Severity: <span class="value">${flag.severity}</span></div>
+              <div>Points: <span class="value">${flag.points}</span></div>
+              <div>Status: <span class="${flag.status === 'active' ? 'warning' : 'value'}">${flag.status}</span></div>
+              <div>Details: <pre>${JSON.stringify(flag.details, null, 2)}</pre></div>
+            </div>
+          `;
+        });
+        
+        html += '</div>';
+      });
+      
+      output.innerHTML = `<h2>🚩 User Flags <span class="count">${totalFlags} total</span></h2>` + html;
+    };
+
+    window.runFullDiagnostic = async function() {
+      output.innerHTML = '<h2>🔬 Full System Diagnostic</h2>';
+      output.innerHTML += '<div class="debug-output">Running comprehensive checks...</div>';
+      
+      await checkTestCustomers();
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const temp1 = output.innerHTML;
+      await checkTestBookings();
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const temp2 = output.innerHTML;
+      await checkUserFlags();
+      
+      output.innerHTML = '<h2>🔬 Full System Diagnostic</h2>' + 
+        temp1.replace('<h2>👥 Test Customers</h2>', '') +
+        temp2.replace(temp1, '').replace('<h2>📦 Test Bookings</h2>', '<h2>📦 Test Bookings</h2>');
+    };
+  </script>
+</body>
+</html>

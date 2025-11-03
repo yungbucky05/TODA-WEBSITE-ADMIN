@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Test Customers - Flagged Accounts Testing</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .section {
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 10px;
+      border-left: 4px solid #667eea;
+    }
+
+    .section h2 {
+      color: #333;
+      margin-bottom: 15px;
+      font-size: 18px;
+    }
+
+    .section p {
+      color: #666;
+      margin-bottom: 10px;
+      line-height: 1.6;
+    }
+
+    .test-list {
+      list-style: none;
+      margin-top: 15px;
+    }
+
+    .test-list li {
+      padding: 8px 0;
+      color: #444;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .test-list li::before {
+      content: "✓";
+      color: #10b981;
+      font-weight: bold;
+      font-size: 18px;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
+
+    .message {
+      padding: 15px;
+      border-radius: 10px;
+      margin-top: 20px;
+      font-weight: 500;
+    }
+
+    .message.success {
+      background: #d1fae5;
+      color: #065f46;
+      border: 1px solid #10b981;
+    }
+
+    .message.error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #ef4444;
+    }
+
+    .message.info {
+      background: #dbeafe;
+      color: #1e40af;
+      border: 1px solid #3b82f6;
+    }
+
+    .progress {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f1f5f9;
+      border-radius: 10px;
+      font-size: 14px;
+      color: #475569;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .progress-item {
+      padding: 5px 0;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .progress-item:last-child {
+      border-bottom: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 Test Customer Data Generator</h1>
+    <p class="subtitle">Create realistic test data to verify customer flagging system</p>
+
+    <div class="section">
+      <h2>📋 What This Will Create</h2>
+      <ul class="test-list">
+        <li><strong>Maria Santos</strong> - No-Show Pattern (40% rate) + Wrong PIN</li>
+        <li><strong>Juan Dela Cruz</strong> - Excessive Cancellations (30% rate)</li>
+        <li><strong>Pedro Reyes</strong> - Non-Payment + Abusive Behavior</li>
+        <li><strong>15+ Test Bookings</strong> - Various statuses and scenarios</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>⚠️ Important Notes</h2>
+      <p>
+        • This will add test data to your Firebase database<br>
+        • Make sure you're using a test/development environment<br>
+        • You can clean up the data using the "Clear Test Data" button below<br>
+        • After creating data, go to Flagged Accounts and click "Run Auto-Detection"
+      </p>
+    </div>
+
+    <button class="btn" onclick="createTestData()" id="createBtn">
+      🚀 Create Test Customers & Bookings
+    </button>
+
+    <button class="btn btn-danger" onclick="clearTestData()" id="clearBtn">
+      🗑️ Clear All Test Data
+    </button>
+
+    <div id="messageContainer"></div>
+    <div id="progressContainer"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+    import { getDatabase, ref, set, remove, get } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyA9ADVig4CiO2Y3ELl3unzXajdzxCgRxHI",
+      authDomain: "toda-contribution-system.firebaseapp.com",
+      databaseURL: "https://toda-contribution-system-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "toda-contribution-system",
+      storageBucket: "toda-contribution-system.firebasestorage.app",
+      messagingSenderId: "536068566619",
+      appId: "1:536068566619:web:ff7cc576e59b76ae58997e"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    function showMessage(text, type = 'info') {
+      const container = document.getElementById('messageContainer');
+      container.innerHTML = `<div class="message ${type}">${text}</div>`;
+    }
+
+    function addProgress(text) {
+      let container = document.getElementById('progressContainer');
+      if (!container.querySelector('.progress')) {
+        container.innerHTML = '<div class="progress"></div>';
+      }
+      const progress = container.querySelector('.progress');
+      const item = document.createElement('div');
+      item.className = 'progress-item';
+      item.textContent = text;
+      progress.appendChild(item);
+      progress.scrollTop = progress.scrollHeight;
+    }
+
+    window.createTestData = async function() {
+      const createBtn = document.getElementById('createBtn');
+      createBtn.disabled = true;
+      document.getElementById('messageContainer').innerHTML = '';
+      document.getElementById('progressContainer').innerHTML = '';
+
+      try {
+        showMessage('Creating test data...', 'info');
+        addProgress('Starting test data creation...');
+
+        // Create test customers
+        const customers = {
+          testCustomer1: {
+            name: "Maria Santos",
+            email: "maria.test@example.com",
+            phoneNumber: "+639123456789",
+            userType: "PASSENGER",
+            flagScore: 0,
+            flagStatus: "good",
+            createdAt: Date.now()
+          },
+          testCustomer2: {
+            name: "Juan Dela Cruz",
+            email: "juan.test@example.com",
+            phoneNumber: "+639987654321",
+            userType: "PASSENGER",
+            flagScore: 0,
+            flagStatus: "good",
+            createdAt: Date.now()
+          },
+          testCustomer3: {
+            name: "Pedro Reyes",
+            email: "pedro.test@example.com",
+            phoneNumber: "+639111222333",
+            userType: "PASSENGER",
+            flagScore: 0,
+            flagStatus: "good",
+            createdAt: Date.now()
+          }
+        };
+
+        for (const [id, customer] of Object.entries(customers)) {
+          await set(ref(db, `users/${id}`), customer);
+          addProgress(`✓ Created customer: ${customer.name}`);
+        }
+
+        // Create bookings for Maria (No-Show + Wrong PIN)
+        const mariaBookings = [
+          { status: "completed", timestamp: Date.now() - 500000 },
+          { status: "no-show", customerNoShow: true, timestamp: Date.now() - 400000 },
+          { status: "completed", timestamp: Date.now() - 300000 },
+          { status: "no-show", customerNoShow: true, timestamp: Date.now() - 200000 },
+          { status: "completed", timestamp: Date.now() - 100000 },
+          { status: "completed", wrongPin: true, incorrectLocation: true, timestamp: Date.now() - 50000 },
+          { status: "completed", wrongPin: true, timestamp: Date.now() - 25000 }
+        ];
+
+        for (let i = 0; i < mariaBookings.length; i++) {
+          await set(ref(db, `bookings/testBooking_maria_${i}`), {
+            customerId: "testCustomer1",
+            driverId: "dummyDriver1",
+            ...mariaBookings[i]
+          });
+        }
+        addProgress(`✓ Created ${mariaBookings.length} bookings for Maria Santos`);
+
+        // Create bookings for Juan (Excessive Cancellations)
+        const juanBookings = [
+          { status: "completed" },
+          { status: "cancelled", cancelledBy: "customer" },
+          { status: "completed" },
+          { status: "cancelled", cancelledBy: "customer" },
+          { status: "cancelled", cancelledBy: "customer" },
+          { status: "completed" },
+          { status: "completed" },
+          { status: "completed" },
+          { status: "completed" },
+          { status: "completed" }
+        ];
+
+        for (let i = 0; i < juanBookings.length; i++) {
+          await set(ref(db, `bookings/testBooking_juan_${i}`), {
+            customerId: "testCustomer2",
+            driverId: "dummyDriver1",
+            timestamp: Date.now() - ((10 - i) * 50000),
+            ...juanBookings[i]
+          });
+        }
+        addProgress(`✓ Created ${juanBookings.length} bookings for Juan Dela Cruz`);
+
+        // Create bookings for Pedro (Non-Payment + Abusive)
+        await set(ref(db, 'bookings/testBooking_pedro_1'), {
+          customerId: "testCustomer3",
+          driverId: "dummyDriver1",
+          status: "completed",
+          nonPayment: true,
+          paymentStatus: "unpaid",
+          timestamp: Date.now() - 100000
+        });
+
+        await set(ref(db, 'bookings/testBooking_pedro_2'), {
+          customerId: "testCustomer3",
+          driverId: "dummyDriver1",
+          status: "completed",
+          abusiveCustomer: true,
+          driverReportedAbuse: true,
+          timestamp: Date.now() - 50000
+        });
+        addProgress(`✓ Created 2 bookings for Pedro Reyes`);
+
+        showMessage('✅ Test data created successfully! Now go to Flagged Accounts and run Auto-Detection.', 'success');
+        addProgress('');
+        addProgress('🎯 Next Steps:');
+        addProgress('1. Go to the Flagged Accounts page');
+        addProgress('2. Click "Run Auto-Detection"');
+        addProgress('3. You should see flags for Maria, Juan, and Pedro');
+
+      } catch (error) {
+        showMessage('❌ Error creating test data: ' + error.message, 'error');
+        addProgress(`❌ Error: ${error.message}`);
+      } finally {
+        createBtn.disabled = false;
+      }
+    };
+
+    window.clearTestData = async function() {
+      if (!confirm('Are you sure you want to delete all test data?')) {
+        return;
+      }
+
+      const clearBtn = document.getElementById('clearBtn');
+      clearBtn.disabled = true;
+      document.getElementById('messageContainer').innerHTML = '';
+      document.getElementById('progressContainer').innerHTML = '';
+
+      try {
+        showMessage('Clearing test data...', 'info');
+        addProgress('Starting cleanup...');
+
+        // Remove test customers
+        await remove(ref(db, 'users/testCustomer1'));
+        await remove(ref(db, 'users/testCustomer2'));
+        await remove(ref(db, 'users/testCustomer3'));
+        addProgress('✓ Removed test customers');
+
+        // Remove test bookings
+        const bookingsRef = ref(db, 'bookings');
+        const snapshot = await get(bookingsRef);
+        if (snapshot.exists()) {
+          const bookings = snapshot.val();
+          for (const bookingId in bookings) {
+            if (bookingId.startsWith('testBooking_')) {
+              await remove(ref(db, `bookings/${bookingId}`));
+            }
+          }
+        }
+        addProgress('✓ Removed test bookings');
+
+        // Remove any test flags
+        await remove(ref(db, 'userFlags/testCustomer1'));
+        await remove(ref(db, 'userFlags/testCustomer2'));
+        await remove(ref(db, 'userFlags/testCustomer3'));
+        addProgress('✓ Removed test flags');
+
+        showMessage('✅ Test data cleared successfully!', 'success');
+
+      } catch (error) {
+        showMessage('❌ Error clearing test data: ' + error.message, 'error');
+        addProgress(`❌ Error: ${error.message}`);
+      } finally {
+        clearBtn.disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>

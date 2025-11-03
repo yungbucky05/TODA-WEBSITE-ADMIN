@@ -18,7 +18,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 // Global variables
-let allFlaggedAccounts = [];
+let allAccounts = [];
 let filteredAccounts = [];
 let currentPage = 1;
 let itemsPerPage = 25;
@@ -178,90 +178,146 @@ window.closeConfirmModal = function() {
   if (confirmCallback) confirmCallback(false);
 }
 
-// Load all flagged accounts
+// Nested confirmation (for use inside account modal)
+let nestedConfirmCallback = null;
+
+function showNestedConfirm(message, title = '⚠️ Confirm Action', confirmText = 'Confirm') {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('nestedConfirmModal');
+    if (!modal) {
+      // Fallback to regular confirm if nested modal not available
+      resolve(confirm(message));
+      return;
+    }
+    
+    document.getElementById('nestedConfirmTitle').textContent = title;
+    document.getElementById('nestedConfirmMessage').textContent = message;
+    document.getElementById('nestedConfirmBtn').textContent = confirmText;
+    modal.style.display = 'flex';
+    
+    nestedConfirmCallback = (result) => {
+      modal.style.display = 'none';
+      nestedConfirmCallback = null;
+      resolve(result);
+    };
+  });
+}
+
+window.handleNestedConfirm = function() {
+  if (nestedConfirmCallback) nestedConfirmCallback(true);
+}
+
+window.closeNestedConfirm = function() {
+  if (nestedConfirmCallback) nestedConfirmCallback(false);
+}
+
+// Load all accounts with their flag status
 function loadFlaggedAccounts() {
-  allFlaggedAccounts = [];
+  allAccounts = [];
   
-  // Load drivers with flags from separate driverFlags collection
   const driversRef = ref(db, 'drivers');
+  const usersRef = ref(db, 'users');
   const driverFlagsRef = ref(db, 'driverFlags');
+  const userFlagsRef = ref(db, 'userFlags');
   
-  // First get all drivers data
+  // Load all drivers
   get(driversRef).then((driversSnapshot) => {
     const drivers = driversSnapshot.val() || {};
     
-    // Then get all driver flags
+    // Load driver flags
     get(driverFlagsRef).then((flagsSnapshot) => {
-      if (flagsSnapshot.exists()) {
-        const driverFlags = flagsSnapshot.val();
-        Object.keys(driverFlags).forEach(driverId => {
-          const driver = drivers[driverId];
-          if (!driver) return; // Skip if driver doesn't exist
-          
-          const flags = driverFlags[driverId];
-          if (flags && Object.keys(flags).length > 0) {
-            Object.keys(flags).forEach(flagId => {
-              const flag = flags[flagId];
-              if (flag.status === 'active' || flag.status === 'resolved') {
-                allFlaggedAccounts.push({
-                  accountId: driverId,
-                  accountType: 'driver',
-                  accountName: driver.driverName || driver.name || 'Unknown Driver',
-                  accountPhone: driver.phoneNumber || 'N/A',
-                  accountEmail: driver.email || 'N/A',
-                  flagScore: driver.flagScore || 0,
-                  flagStatus: driver.flagStatus || 'monitored',
-                  ...flag,
-                  flagId: flagId
-                });
-              }
-            });
-          }
+      const driverFlags = flagsSnapshot.exists() ? flagsSnapshot.val() : {};
+      
+      // Process each driver
+      Object.keys(drivers).forEach(driverId => {
+        const driver = drivers[driverId];
+        const flags = driverFlags[driverId] || {};
+        const flagArray = Object.keys(flags).map(fid => ({ flagId: fid, ...flags[fid] }));
+        const activeFlags = flagArray.filter(f => f.status === 'active');
+        
+        // Calculate flag score from active flags (not stored value)
+        const flagScore = activeFlags.reduce((total, flag) => total + (flag.points || 0), 0);
+        
+        // Determine status based on calculated score
+        let flagStatus = 'good';
+        if (flagScore >= 301) flagStatus = 'suspended';
+        else if (flagScore >= 151) flagStatus = 'restricted';
+        else if (flagScore >= 51) flagStatus = 'monitored';
+        
+        allAccounts.push({
+          accountId: driverId,
+          accountType: 'driver',
+          accountName: driver.driverName || driver.name || 'Unknown Driver',
+          accountPhone: driver.phoneNumber || 'N/A',
+          accountEmail: driver.email || 'N/A',
+          flagScore: flagScore,
+          flagStatus: flagStatus,
+          activeFlags: activeFlags,
+          allFlags: flagArray,
+          totalFlags: flagArray.length
         });
-      }
-      loadCustomerFlags();
+      });
+      
+      // Now load customers
+      loadCustomerAccounts();
     });
   });
 }
 
-function loadCustomerFlags() {
-  // Load customers with flags from separate userFlags collection
+function loadCustomerAccounts() {
   const usersRef = ref(db, 'users');
   const userFlagsRef = ref(db, 'userFlags');
   
-  // First get all users data
+  // Load all users
   get(usersRef).then((usersSnapshot) => {
     const users = usersSnapshot.val() || {};
     
-    // Then get all user flags
+    // Load user flags
     get(userFlagsRef).then((flagsSnapshot) => {
-      if (flagsSnapshot.exists()) {
-        const userFlags = flagsSnapshot.val();
-        Object.keys(userFlags).forEach(userId => {
-          const user = users[userId];
-          if (!user || user.userType !== 'PASSENGER') return; // Skip if not a passenger
+      const userFlags = flagsSnapshot.exists() ? flagsSnapshot.val() : {};
+      
+      // Process each customer
+      Object.keys(users).forEach(userId => {
+        const user = users[userId];
+        
+        // Only include passengers
+        if (user.userType === 'PASSENGER') {
+          const flags = userFlags[userId] || {};
+          const flagArray = Object.keys(flags).map(fid => ({ flagId: fid, ...flags[fid] }));
+          const activeFlags = flagArray.filter(f => f.status === 'active');
           
-          const flags = userFlags[userId];
-          if (flags && Object.keys(flags).length > 0) {
-            Object.keys(flags).forEach(flagId => {
-              const flag = flags[flagId];
-              if (flag.status === 'active' || flag.status === 'resolved') {
-                allFlaggedAccounts.push({
-                  accountId: userId,
-                  accountType: 'customer',
-                  accountName: user.name || 'Unknown Customer',
-                  accountPhone: user.phoneNumber || 'N/A',
-                  accountEmail: user.email || 'N/A',
-                  flagScore: user.flagScore || 0,
-                  flagStatus: user.flagStatus || 'monitored',
-                  ...flag,
-                  flagId: flagId
-                });
-              }
-            });
-          }
-        });
-      }
+          // Calculate flag score from active flags (not stored value)
+          const flagScore = activeFlags.reduce((total, flag) => total + (flag.points || 0), 0);
+          
+          // Determine status based on calculated score
+          let flagStatus = 'good';
+          if (flagScore >= 301) flagStatus = 'suspended';
+          else if (flagScore >= 151) flagStatus = 'restricted';
+          else if (flagScore >= 51) flagStatus = 'monitored';
+          
+          allAccounts.push({
+            accountId: userId,
+            accountType: 'customer',
+            accountName: user.name || 'Unknown Customer',
+            accountPhone: user.phoneNumber || 'N/A',
+            accountEmail: user.email || 'N/A',
+            flagScore: flagScore,
+            flagStatus: flagStatus,
+            activeFlags: activeFlags,
+            allFlags: flagArray,
+            totalFlags: flagArray.length
+          });
+        }
+      });
+      
+      // Sort by flag score (highest first), then by name
+      allAccounts.sort((a, b) => {
+        if (b.flagScore !== a.flagScore) {
+          return b.flagScore - a.flagScore;
+        }
+        return a.accountName.localeCompare(b.accountName);
+      });
+      
       updateStats();
       applyFilters();
     });
@@ -270,43 +326,39 @@ function loadCustomerFlags() {
 
 // Update statistics
 function updateStats() {
-  const critical = allFlaggedAccounts.filter(f => f.severity === 'critical' && f.status === 'active').length;
-  const high = allFlaggedAccounts.filter(f => f.severity === 'high' && f.status === 'active').length;
-  const medium = allFlaggedAccounts.filter(f => f.severity === 'medium' && f.status === 'active').length;
-  const total = allFlaggedAccounts.filter(f => f.status === 'active').length;
+  const total = allAccounts.length;
+  const suspended = allAccounts.filter(a => a.flagStatus === 'suspended').length;
+  const restricted = allAccounts.filter(a => a.flagStatus === 'restricted').length;
+  const monitored = allAccounts.filter(a => a.flagStatus === 'monitored').length;
+  const good = allAccounts.filter(a => a.flagStatus === 'good').length;
   
-  document.getElementById('criticalCount').textContent = critical;
-  document.getElementById('highCount').textContent = high;
-  document.getElementById('mediumCount').textContent = medium;
-  document.getElementById('totalFlagged').textContent = total;
+  document.getElementById('totalAccounts').textContent = total;
+  document.getElementById('suspendedCount').textContent = suspended;
+  document.getElementById('restrictedCount').textContent = restricted;
+  document.getElementById('monitoredCount').textContent = monitored;
+  document.getElementById('goodCount').textContent = good;
 }
 
 // Apply filters
 window.applyFilters = function() {
   const accountType = document.getElementById('accountTypeFilter').value;
-  const severity = document.getElementById('severityFilter').value;
-  const status = document.getElementById('statusFilter').value;
+  const flagStatus = document.getElementById('flagStatusFilter').value;
+  const flaggedOnly = document.getElementById('flaggedOnlyFilter').value;
   const search = document.getElementById('searchInput').value.toLowerCase();
   
-  filteredAccounts = allFlaggedAccounts.filter(account => {
+  filteredAccounts = allAccounts.filter(account => {
     const matchesAccountType = accountType === 'all' || account.accountType === accountType;
-    const matchesSeverity = severity === 'all' || account.severity === severity;
-    const matchesStatus = status === 'all' || account.status === status;
+    const matchesFlagStatus = flagStatus === 'all' || account.flagStatus === flagStatus;
+    const matchesFlaggedOnly = flaggedOnly === 'all' || 
+      (flaggedOnly === 'flagged' && account.flagScore > 0) ||
+      (flaggedOnly === 'clean' && account.flagScore === 0);
     const matchesSearch = !search || 
       account.accountName.toLowerCase().includes(search) ||
       account.accountPhone.includes(search) ||
+      account.accountEmail.toLowerCase().includes(search) ||
       account.accountId.toLowerCase().includes(search);
     
-    return matchesAccountType && matchesSeverity && matchesStatus && matchesSearch;
-  });
-  
-  // Sort by severity and timestamp
-  filteredAccounts.sort((a, b) => {
-    const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-    if (severityOrder[a.severity] !== severityOrder[b.severity]) {
-      return severityOrder[a.severity] - severityOrder[b.severity];
-    }
-    return b.timestamp - a.timestamp;
+    return matchesAccountType && matchesFlagStatus && matchesFlaggedOnly && matchesSearch;
   });
   
   currentPage = 1;
@@ -323,19 +375,25 @@ function displayAccounts() {
   if (pageAccounts.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="8" class="empty-state">
+        <td colspan="7" class="empty-state">
           <div class="empty-state-icon">🔍</div>
-          <p>No flagged accounts found</p>
+          <p>No accounts found</p>
         </td>
       </tr>
     `;
   } else {
     tbody.innerHTML = pageAccounts.map(account => {
-      const flagType = FLAG_TYPES[account.type] || {};
       const initials = account.accountName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+      const statusClass = account.flagStatus || 'good';
+      const statusEmoji = {
+        suspended: '🚫',
+        restricted: '⚠️',
+        monitored: '👀',
+        good: '✅'
+      }[statusClass] || '✅';
       
       return `
-        <tr>
+        <tr class="account-row ${account.flagScore > 0 ? 'has-flags' : 'no-flags'}">
           <td>
             <div class="account-info">
               <div class="account-avatar">${initials}</div>
@@ -349,23 +407,35 @@ function displayAccounts() {
             <span class="badge ${account.accountType}">${account.accountType}</span>
           </td>
           <td>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 20px;">${flagType.icon || '🚩'}</span>
-              <span>${flagType.name || account.type}</span>
+            <span class="flag-score ${account.flagScore > 0 ? 'has-score' : 'no-score'}">
+              ${account.flagScore} pts
+            </span>
+          </td>
+          <td>
+            <span class="status-badge ${statusClass}">
+              ${statusEmoji} ${statusClass}
+            </span>
+          </td>
+          <td>
+            <span class="${account.activeFlags.length > 0 ? 'active-flags-count' : 'no-flags-text'}">
+              ${account.activeFlags.length > 0 
+                ? `🚩 ${account.activeFlags.length} active` 
+                : 'No active flags'}
+            </span>
+          </td>
+          <td>
+            <div class="flag-types-preview">
+              ${account.activeFlags.length > 0 
+                ? account.activeFlags.slice(0, 2).map(flag => {
+                    const flagType = FLAG_TYPES[flag.type] || {};
+                    return `<span class="flag-mini" title="${flagType.name || flag.type}">${flagType.icon || '🚩'} ${flagType.name || flag.type}</span>`;
+                  }).join('')
+                : '<span class="no-flags-text">Clean record</span>'}
+              ${account.activeFlags.length > 2 ? `<span class="more-flags">+${account.activeFlags.length - 2} more</span>` : ''}
             </div>
           </td>
           <td>
-            <span class="badge ${account.severity}">${account.severity}</span>
-          </td>
-          <td>
-            <span class="flag-score ${account.severity}">${account.points || 0}</span>
-          </td>
-          <td>
-            <span class="badge ${account.status}">${account.status}</span>
-          </td>
-          <td>${new Date(account.timestamp).toLocaleDateString()}</td>
-          <td>
-            <button class="action-btn" onclick="viewFlagDetails('${account.accountId}', '${account.flagId}')">
+            <button class="action-btn" onclick="viewAccountDetails('${account.accountId}', '${account.accountType}')">
               View Details
             </button>
           </td>
@@ -511,10 +581,318 @@ window.viewFlagDetails = async function(accountId, flagId) {
   document.getElementById('flagDetailsModal').classList.add('active');
 }
 
+// View account details (all flags)
+window.viewAccountDetails = async function(accountId, accountType) {
+  try {
+    const account = allAccounts.find(a => a.accountId === accountId && a.accountType === accountType);
+    if (!account) {
+      showMessage('Account not found', 'error');
+      return;
+    }
+    
+    const statusInfo = {
+      suspended: { emoji: '🚫', label: 'Suspended', desc: '301+ points' },
+      restricted: { emoji: '⚠️', label: 'Restricted', desc: '151-300 points' },
+      monitored: { emoji: '👀', label: 'Monitored', desc: '51-150 points' },
+      good: { emoji: '✅', label: 'Good Standing', desc: '0-50 points' }
+    }[account.flagStatus] || { emoji: '✅', label: 'Good', desc: '' };
+    
+    const activeFlags = account.activeFlags || [];
+    const resolvedFlags = (account.allFlags || []).filter(f => f.status === 'resolved');
+    const dismissedFlags = (account.allFlags || []).filter(f => f.status === 'dismissed');
+    
+    const modalHTML = `
+      <div class="modal-header">
+        <h2>${account.accountType === 'driver' ? '🚗' : '👤'} ${account.accountName}</h2>
+        <button class="close-btn" onclick="closeAccountModal()">×</button>
+      </div>
+      
+      <div class="account-overview-grid">
+        <div class="overview-card">
+          <div class="overview-label">Account Type</div>
+          <div class="overview-value"><span class="badge ${account.accountType}">${account.accountType}</span></div>
+        </div>
+        <div class="overview-card">
+          <div class="overview-label">Flag Score</div>
+          <div class="overview-value">
+            <span class="flag-score ${account.flagScore > 0 ? 'has-score' : 'no-score'}">${account.flagScore} pts</span>
+          </div>
+        </div>
+        <div class="overview-card">
+          <div class="overview-label">Status</div>
+          <div class="overview-value">
+            <span class="status-badge ${account.flagStatus}">${statusInfo.emoji} ${statusInfo.label}</span>
+            <div style="font-size: 12px; color: #666; margin-top: 4px;">${statusInfo.desc}</div>
+          </div>
+        </div>
+        <div class="overview-card">
+          <div class="overview-label">Total Flags</div>
+          <div class="overview-value">${account.totalFlags}</div>
+        </div>
+      </div>
+      
+      <div class="account-contact-info">
+        <h3>📇 Contact Information</h3>
+        <div class="info-grid">
+          ${account.accountEmail !== 'N/A' ? `<div><strong>Email:</strong> ${account.accountEmail}</div>` : ''}
+          <div><strong>Phone:</strong> ${account.accountPhone}</div>
+          <div><strong>Account ID:</strong> <code>${accountId}</code></div>
+        </div>
+      </div>
+      
+      ${activeFlags.length > 0 ? `
+        <div class="flags-section active-flags">
+          <h3>🚩 Active Flags (${activeFlags.length})</h3>
+          ${activeFlags.map(flag => {
+            const flagType = FLAG_TYPES[flag.type] || {};
+            return `
+              <div class="flag-card ${flag.severity}">
+                <div class="flag-card-header">
+                  <span class="flag-icon">${flagType.icon || '🚩'}</span>
+                  <span class="flag-name">${flagType.name || flag.type}</span>
+                  <span class="flag-points">${flag.points || 0} pts</span>
+                </div>
+                <div class="flag-card-body">
+                  <div class="flag-meta">
+                    <span class="badge ${flag.severity}">${flag.severity}</span>
+                    <span class="flag-date">Flagged: ${new Date(flag.timestamp).toLocaleDateString()}</span>
+                  </div>
+                  ${flag.details ? `
+                    <div class="flag-details">
+                      ${Object.keys(flag.details).map(key => `
+                        <div><strong>${formatKey(key)}:</strong> ${formatValue(flag.details[key])}</div>
+                      `).join('')}
+                    </div>
+                  ` : ''}
+                </div>
+                <div class="flag-card-actions">
+                  <button class="btn-sm btn-resolve" onclick="resolveSpecificFlag('${accountId}', '${accountType}', '${flag.flagId}')">✅ Resolve</button>
+                  <button class="btn-sm btn-escalate" onclick="escalateSpecificFlag('${accountId}', '${accountType}', '${flag.flagId}')">⚠️ Escalate</button>
+                  <button class="btn-sm btn-dismiss" onclick="dismissSpecificFlag('${accountId}', '${accountType}', '${flag.flagId}')">🗑️ Dismiss</button>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      ` : `
+        <div class="no-flags-section">
+          <div class="no-flags-icon">✅</div>
+          <div class="no-flags-title">Clean Record</div>
+          <div class="no-flags-text">This account has no active flags</div>
+        </div>
+      `}
+      
+      ${resolvedFlags.length > 0 ? `
+        <div class="flags-section resolved-flags">
+          <h3>✅ Resolved Flags (${resolvedFlags.length})</h3>
+          <div class="resolved-flags-list">
+            ${resolvedFlags.map(flag => {
+              const flagType = FLAG_TYPES[flag.type] || {};
+              return `
+                <div class="resolved-flag-item">
+                  ${flagType.icon || '🚩'} ${flagType.name || flag.type} - 
+                  <span class="resolved-date">Resolved on ${new Date(flag.resolvedDate || flag.timestamp).toLocaleDateString()}</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      ` : ''}
+      
+      ${dismissedFlags.length > 0 ? `
+        <div class="flags-section dismissed-flags">
+          <h3>🗑️ Dismissed Flags (${dismissedFlags.length})</h3>
+          <div class="dismissed-flags-list">
+            ${dismissedFlags.map(flag => {
+              const flagType = FLAG_TYPES[flag.type] || {};
+              return `
+                <div class="dismissed-flag-item">
+                  ${flagType.icon || '🚩'} ${flagType.name || flag.type} - 
+                  <span class="dismissed-date">Dismissed on ${new Date(flag.dismissedDate || flag.timestamp).toLocaleDateString()}</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      ` : ''}
+      
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeAccountModal()">Close</button>
+      </div>
+      
+      <!-- Embedded Confirmation Modal -->
+      <div class="modal nested-modal" id="nestedConfirmModal" style="display: none;">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 id="nestedConfirmTitle">⚠️ Confirm Action</h2>
+          </div>
+          <div class="modal-body">
+            <p id="nestedConfirmMessage"></p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeNestedConfirm()">Cancel</button>
+            <button class="btn-primary" id="nestedConfirmBtn" onclick="handleNestedConfirm()">Confirm</button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    document.getElementById('accountModalContent').innerHTML = modalHTML;
+    document.getElementById('accountModal').classList.add('active');
+    
+  } catch (error) {
+    console.error('Error viewing account details:', error);
+    showMessage('Error loading account details: ' + error.message, 'error');
+  }
+}
+
+window.closeAccountModal = function() {
+  document.getElementById('accountModal').classList.remove('active');
+}
+
 // Close flag details
 window.closeFlagDetails = function() {
   document.getElementById('flagDetailsModal').classList.remove('active');
   selectedFlag = null;
+}
+
+// Resolve specific flag
+window.resolveSpecificFlag = async function(accountId, accountType, flagId) {
+  const confirmed = await showNestedConfirm(
+    'Are you sure you want to resolve this flag?',
+    '✅ Resolve Flag',
+    'Resolve'
+  );
+  
+  if (!confirmed) return;
+  
+  try {
+    const flagCollectionPath = accountType === 'driver' ? 'driverFlags' : 'userFlags';
+    const accountPath = accountType === 'driver' ? 'drivers' : 'users';
+    const flagRef = ref(db, `${flagCollectionPath}/${accountId}/${flagId}`);
+    
+    // Get flag data to subtract points
+    const flagSnap = await get(flagRef);
+    if (!flagSnap.exists()) {
+      showMessage('Flag not found', 'error');
+      return;
+    }
+    
+    const flag = flagSnap.val();
+    
+    // Update flag status
+    await update(flagRef, {
+      status: 'resolved',
+      resolvedDate: Date.now(),
+      resolvedBy: 'Admin'
+    });
+    
+    // Update account score
+    const accountRef = ref(db, `${accountPath}/${accountId}`);
+    const accountSnap = await get(accountRef);
+    if (accountSnap.exists()) {
+      const account = accountSnap.val();
+      const newScore = Math.max(0, (account.flagScore || 0) - (flag.points || 0));
+      const newStatus = newScore > 300 ? 'suspended' : newScore > 150 ? 'restricted' : newScore > 50 ? 'monitored' : 'good';
+      
+      await update(accountRef, {
+        flagScore: newScore,
+        flagStatus: newStatus
+      });
+    }
+    
+    showMessage('Flag resolved successfully', 'success');
+    closeAccountModal();
+    loadFlaggedAccounts();
+    
+  } catch (error) {
+    showMessage('Error resolving flag: ' + error.message, 'error');
+  }
+}
+
+// Escalate specific flag
+window.escalateSpecificFlag = async function(accountId, accountType, flagId) {
+  const confirmed = await showNestedConfirm(
+    'Are you sure you want to escalate this flag? This will increase the severity and add 25 points.',
+    '⚠️ Escalate Flag',
+    'Escalate'
+  );
+  
+  if (!confirmed) return;
+  
+  try {
+    const flagCollectionPath = accountType === 'driver' ? 'driverFlags' : 'userFlags';
+    const accountPath = accountType === 'driver' ? 'drivers' : 'users';
+    const flagRef = ref(db, `${flagCollectionPath}/${accountId}/${flagId}`);
+    
+    // Get current flag
+    const flagSnap = await get(flagRef);
+    if (!flagSnap.exists()) {
+      showMessage('Flag not found', 'error');
+      return;
+    }
+    
+    const flag = flagSnap.val();
+    const newSeverity = flag.severity === 'medium' ? 'high' : 
+                       flag.severity === 'high' ? 'critical' : 'critical';
+    const additionalPoints = 25;
+    
+    // Update flag
+    await update(flagRef, {
+      severity: newSeverity,
+      points: (flag.points || 0) + additionalPoints
+    });
+    
+    // Update account score
+    const accountRef = ref(db, `${accountPath}/${accountId}`);
+    const accountSnap = await get(accountRef);
+    if (accountSnap.exists()) {
+      const account = accountSnap.val();
+      const newScore = (account.flagScore || 0) + additionalPoints;
+      const newStatus = newScore > 300 ? 'suspended' : newScore > 150 ? 'restricted' : newScore > 50 ? 'monitored' : 'good';
+      
+      await update(accountRef, {
+        flagScore: newScore,
+        flagStatus: newStatus
+      });
+    }
+    
+    showMessage('Flag escalated successfully', 'success');
+    closeAccountModal();
+    loadFlaggedAccounts();
+    
+  } catch (error) {
+    showMessage('Error escalating flag: ' + error.message, 'error');
+  }
+}
+
+// Dismiss specific flag
+window.dismissSpecificFlag = async function(accountId, accountType, flagId) {
+  const confirmed = await showNestedConfirm(
+    'Are you sure you want to dismiss this flag? This will mark it as a false positive.',
+    '🗑️ Dismiss Flag',
+    'Dismiss'
+  );
+  
+  if (!confirmed) return;
+  
+  try {
+    const flagCollectionPath = accountType === 'driver' ? 'driverFlags' : 'userFlags';
+    const flagRef = ref(db, `${flagCollectionPath}/${accountId}/${flagId}`);
+    
+    await update(flagRef, {
+      status: 'dismissed',
+      dismissedDate: Date.now(),
+      dismissedBy: 'Admin'
+    });
+    
+    showMessage('Flag dismissed successfully', 'success');
+    closeAccountModal();
+    loadFlaggedAccounts();
+    
+  } catch (error) {
+    showMessage('Error dismissing flag: ' + error.message, 'error');
+  }
 }
 
 // Resolve flag
