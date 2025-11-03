@@ -553,6 +553,7 @@ window.resolveFlag = async function() {
     
     showMessage('Flag resolved successfully', 'success');
     closeFlagDetails();
+    loadFlaggedAccounts();
   } catch (error) {
     showMessage('Error resolving flag: ' + error.message, 'error');
   }
@@ -597,6 +598,7 @@ window.escalateFlag = async function() {
     
     showMessage('Flag escalated successfully', 'success');
     closeFlagDetails();
+    loadFlaggedAccounts();
   } catch (error) {
     showMessage('Error escalating flag: ' + error.message, 'error');
   }
@@ -626,6 +628,7 @@ window.dismissFlag = async function() {
     
     showMessage('Flag dismissed successfully', 'success');
     closeFlagDetails();
+    loadFlaggedAccounts();
   } catch (error) {
     showMessage('Error dismissing flag: ' + error.message, 'error');
   }
@@ -676,27 +679,47 @@ window.runAutoDetection = async function() {
   const results = [];
   
   try {
-    // Step 1: Check driver contributions (20%)
+    // Step 1: Check driver contributions (10%)
     updateProgress(10, 'Analyzing driver contributions...');
     const contributionFlags = await detectLowContributions();
     results.push(...contributionFlags);
     
-    // Step 2: Check inactive accounts (40%)
-    updateProgress(30, 'Checking for inactive accounts...');
+    // Step 2: Check inactive accounts (20%)
+    updateProgress(20, 'Checking for inactive accounts...');
     const inactiveFlags = await detectInactiveAccounts();
     results.push(...inactiveFlags);
     
-    // Step 3: Check customer no-shows (60%)
-    updateProgress(50, 'Analyzing customer booking patterns...');
+    // Step 3: Check driver cancellations (30%)
+    updateProgress(30, 'Checking driver cancellation rates...');
+    const driverCancellationFlags = await detectHighCancellations();
+    results.push(...driverCancellationFlags);
+    
+    // Step 4: Check customer no-shows (40%)
+    updateProgress(40, 'Analyzing customer no-show patterns...');
     const noShowFlags = await detectNoShows();
     results.push(...noShowFlags);
     
-    // Step 4: Check cancellations (80%)
-    updateProgress(70, 'Checking cancellation rates...');
-    const cancellationFlags = await detectHighCancellations();
-    results.push(...cancellationFlags);
+    // Step 5: Check customer excessive cancellations (50%)
+    updateProgress(50, 'Checking customer cancellation rates...');
+    const customerCancellationFlags = await detectExcessiveCancellations();
+    results.push(...customerCancellationFlags);
     
-    // Step 5: Finalize (100%)
+    // Step 6: Check non-payment (60%)
+    updateProgress(60, 'Checking for non-payment issues...');
+    const nonPaymentFlags = await detectNonPayment();
+    results.push(...nonPaymentFlags);
+    
+    // Step 7: Check wrong PIN (70%)
+    updateProgress(70, 'Analyzing location PIN accuracy...');
+    const wrongPinFlags = await detectWrongPin();
+    results.push(...wrongPinFlags);
+    
+    // Step 8: Check abusive behavior (80%)
+    updateProgress(80, 'Checking for abusive behavior reports...');
+    const abusiveFlags = await detectAbusiveBehavior();
+    results.push(...abusiveFlags);
+    
+    // Step 9: Finalize (100%)
     updateProgress(100, 'Detection complete!');
     
     // Display results
@@ -704,6 +727,13 @@ window.runAutoDetection = async function() {
     
     document.getElementById('closeDetectionBtn').disabled = false;
     showMessage(`Detection complete! Found ${results.length} new flags.`, 'success');
+    
+    // Reload flagged accounts to show new flags
+    if (results.length > 0) {
+      setTimeout(() => {
+        loadFlaggedAccounts();
+      }, 1000);
+    }
     
   } catch (error) {
     showMessage('Error during auto-detection: ' + error.message, 'error');
@@ -736,6 +766,8 @@ function displayDetectionResults(results) {
 // Close detection modal
 window.closeDetectionModal = function() {
   document.getElementById('detectionModal').classList.remove('active');
+  // Reload to show any new flags
+  loadFlaggedAccounts();
 }
 
 // Detection Functions
@@ -880,7 +912,7 @@ async function detectNoShows() {
   // Check each customer
   Object.keys(users).forEach(userId => {
     const user = users[userId];
-    if (user.role === 'customer') {
+    if (user.userType === 'PASSENGER') {
       const bookingData = customerBookings[userId];
       
       if (bookingData && bookingData.total >= 5) {
@@ -961,6 +993,252 @@ async function detectHighCancellations() {
             totalBookings: bookingData.total,
             cancelledCount: bookingData.cancelled,
             cancellationRate: cancellationRate.toFixed(1) + '%'
+          }));
+        }
+      }
+    }
+  });
+  
+  return flags;
+}
+
+// Detect excessive cancellations (customers)
+async function detectExcessiveCancellations() {
+  const flags = [];
+  const usersRef = ref(db, 'users');
+  const bookingsRef = ref(db, 'bookings');
+  const userFlagsRef = ref(db, 'userFlags');
+  
+  const usersSnapshot = await get(usersRef);
+  const bookingsSnapshot = await get(bookingsRef);
+  const userFlagsSnapshot = await get(userFlagsRef);
+  
+  if (!usersSnapshot.exists() || !bookingsSnapshot.exists()) return flags;
+  
+  const users = usersSnapshot.val();
+  const bookings = bookingsSnapshot.val();
+  const existingFlags = userFlagsSnapshot.exists() ? userFlagsSnapshot.val() : {};
+  
+  // Count cancellations per customer
+  const customerBookings = {};
+  
+  Object.keys(bookings).forEach(bookingId => {
+    const booking = bookings[bookingId];
+    const customerId = booking.customerId;
+    
+    if (customerId) {
+      if (!customerBookings[customerId]) {
+        customerBookings[customerId] = { total: 0, cancelled: 0 };
+      }
+      
+      customerBookings[customerId].total++;
+      
+      if (booking.status === 'cancelled' && booking.cancelledBy === 'customer') {
+        customerBookings[customerId].cancelled++;
+      }
+    }
+  });
+  
+  // Check each customer
+  Object.keys(users).forEach(userId => {
+    const user = users[userId];
+    if (user.userType === 'PASSENGER') {
+      const bookingData = customerBookings[userId];
+      
+      if (bookingData && bookingData.total >= 10) {
+        const cancellationRate = (bookingData.cancelled / bookingData.total) * 100;
+        
+        if (cancellationRate > 25) {
+          // Check if flag already exists
+          const userFlags = existingFlags[userId] || {};
+          const hasCancellationFlag = Object.values(userFlags).some(f => f.type === 'EXCESSIVE_CANCELLATIONS' && f.status === 'active');
+          
+          if (!hasCancellationFlag) {
+            flags.push(createFlag(userId, user, 'EXCESSIVE_CANCELLATIONS', {
+              totalBookings: bookingData.total,
+              cancelledCount: bookingData.cancelled,
+              cancellationRate: cancellationRate.toFixed(1) + '%'
+            }));
+          }
+        }
+      }
+    }
+  });
+  
+  return flags;
+}
+
+// Detect non-payment
+async function detectNonPayment() {
+  const flags = [];
+  const usersRef = ref(db, 'users');
+  const bookingsRef = ref(db, 'bookings');
+  const userFlagsRef = ref(db, 'userFlags');
+  
+  const usersSnapshot = await get(usersRef);
+  const bookingsSnapshot = await get(bookingsRef);
+  const userFlagsSnapshot = await get(userFlagsRef);
+  
+  if (!usersSnapshot.exists() || !bookingsSnapshot.exists()) return flags;
+  
+  const users = usersSnapshot.val();
+  const bookings = bookingsSnapshot.val();
+  const existingFlags = userFlagsSnapshot.exists() ? userFlagsSnapshot.val() : {};
+  
+  // Count non-payment instances per customer
+  const customerNonPayments = {};
+  
+  Object.keys(bookings).forEach(bookingId => {
+    const booking = bookings[bookingId];
+    const customerId = booking.customerId;
+    
+    if (customerId && (booking.nonPayment === true || booking.paymentStatus === 'unpaid')) {
+      if (!customerNonPayments[customerId]) {
+        customerNonPayments[customerId] = { count: 0, bookingIds: [] };
+      }
+      customerNonPayments[customerId].count++;
+      customerNonPayments[customerId].bookingIds.push(bookingId);
+    }
+  });
+  
+  // Check each customer with non-payment issues
+  Object.keys(customerNonPayments).forEach(userId => {
+    const user = users[userId];
+    if (user && user.userType === 'PASSENGER') {
+      const nonPaymentData = customerNonPayments[userId];
+      
+      if (nonPaymentData.count >= 1) { // Flag if at least 1 non-payment
+        // Check if flag already exists
+        const userFlags = existingFlags[userId] || {};
+        const hasNonPaymentFlag = Object.values(userFlags).some(f => f.type === 'NON_PAYMENT' && f.status === 'active');
+        
+        if (!hasNonPaymentFlag) {
+          flags.push(createFlag(userId, user, 'NON_PAYMENT', {
+            nonPaymentCount: nonPaymentData.count,
+            affectedBookings: nonPaymentData.bookingIds.length
+          }));
+        }
+      }
+    }
+  });
+  
+  return flags;
+}
+
+// Detect wrong PIN
+async function detectWrongPin() {
+  const flags = [];
+  const usersRef = ref(db, 'users');
+  const bookingsRef = ref(db, 'bookings');
+  const userFlagsRef = ref(db, 'userFlags');
+  
+  const usersSnapshot = await get(usersRef);
+  const bookingsSnapshot = await get(bookingsRef);
+  const userFlagsSnapshot = await get(userFlagsRef);
+  
+  if (!usersSnapshot.exists() || !bookingsSnapshot.exists()) return flags;
+  
+  const users = usersSnapshot.val();
+  const bookings = bookingsSnapshot.val();
+  const existingFlags = userFlagsSnapshot.exists() ? userFlagsSnapshot.val() : {};
+  
+  // Count wrong PIN incidents per customer
+  const customerWrongPins = {};
+  
+  Object.keys(bookings).forEach(bookingId => {
+    const booking = bookings[bookingId];
+    const customerId = booking.customerId;
+    
+    if (customerId) {
+      if (!customerWrongPins[customerId]) {
+        customerWrongPins[customerId] = { total: 0, wrongPins: 0 };
+      }
+      
+      customerWrongPins[customerId].total++;
+      
+      if (booking.wrongPin === true || booking.incorrectLocation === true) {
+        customerWrongPins[customerId].wrongPins++;
+      }
+    }
+  });
+  
+  // Check each customer
+  Object.keys(users).forEach(userId => {
+    const user = users[userId];
+    if (user.userType === 'PASSENGER') {
+      const pinData = customerWrongPins[userId];
+      
+      if (pinData && pinData.total >= 5) {
+        const wrongPinRate = (pinData.wrongPins / pinData.total) * 100;
+        
+        if (wrongPinRate > 30) { // Flag if more than 30% wrong PINs
+          // Check if flag already exists
+          const userFlags = existingFlags[userId] || {};
+          const hasWrongPinFlag = Object.values(userFlags).some(f => f.type === 'WRONG_PIN' && f.status === 'active');
+          
+          if (!hasWrongPinFlag) {
+            flags.push(createFlag(userId, user, 'WRONG_PIN', {
+              totalBookings: pinData.total,
+              wrongPinCount: pinData.wrongPins,
+              wrongPinRate: wrongPinRate.toFixed(1) + '%'
+            }));
+          }
+        }
+      }
+    }
+  });
+  
+  return flags;
+}
+
+// Detect abusive behavior
+async function detectAbusiveBehavior() {
+  const flags = [];
+  const usersRef = ref(db, 'users');
+  const bookingsRef = ref(db, 'bookings');
+  const userFlagsRef = ref(db, 'userFlags');
+  
+  const usersSnapshot = await get(usersRef);
+  const bookingsSnapshot = await get(bookingsRef);
+  const userFlagsSnapshot = await get(userFlagsRef);
+  
+  if (!usersSnapshot.exists() || !bookingsSnapshot.exists()) return flags;
+  
+  const users = usersSnapshot.val();
+  const bookings = bookingsSnapshot.val();
+  const existingFlags = userFlagsSnapshot.exists() ? userFlagsSnapshot.val() : {};
+  
+  // Count abuse reports per customer
+  const customerAbuseReports = {};
+  
+  Object.keys(bookings).forEach(bookingId => {
+    const booking = bookings[bookingId];
+    const customerId = booking.customerId;
+    
+    if (customerId && (booking.abusiveCustomer === true || booking.customerAbuse === true || booking.driverReportedAbuse === true)) {
+      if (!customerAbuseReports[customerId]) {
+        customerAbuseReports[customerId] = { count: 0, bookingIds: [] };
+      }
+      customerAbuseReports[customerId].count++;
+      customerAbuseReports[customerId].bookingIds.push(bookingId);
+    }
+  });
+  
+  // Check each customer with abuse reports
+  Object.keys(customerAbuseReports).forEach(userId => {
+    const user = users[userId];
+    if (user && user.userType === 'PASSENGER') {
+      const abuseData = customerAbuseReports[userId];
+      
+      if (abuseData.count >= 1) { // Flag if at least 1 abuse report
+        // Check if flag already exists
+        const userFlags = existingFlags[userId] || {};
+        const hasAbusiveFlag = Object.values(userFlags).some(f => f.type === 'ABUSIVE_BEHAVIOR' && f.status === 'active');
+        
+        if (!hasAbusiveFlag) {
+          flags.push(createFlag(userId, user, 'ABUSIVE_BEHAVIOR', {
+            abuseReportCount: abuseData.count,
+            affectedBookings: abuseData.bookingIds.length
           }));
         }
       }
