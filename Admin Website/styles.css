@@ -426,6 +426,10 @@ body {
   background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
 }
 
+.action-icon.slate {
+  background: linear-gradient(135deg, #1f2937 0%, #4b5563 100%);
+}
+
 .action-text h4 {
   font-size: 15px;
   color: #1e293b;
