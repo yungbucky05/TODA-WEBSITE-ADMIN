@@ -211,6 +211,48 @@ window.closeNestedConfirm = function() {
   if (nestedConfirmCallback) nestedConfirmCallback(false);
 }
 
+// Helper function to recalculate and update flag score for an account
+async function recalculateFlagScore(accountId, accountType) {
+  try {
+    const flagCollectionPath = accountType === 'driver' ? 'driverFlags' : 'userFlags';
+    const accountPath = accountType === 'driver' ? 'drivers' : 'users';
+    
+    // Get all flags for this account
+    const allFlagsRef = ref(db, `${flagCollectionPath}/${accountId}`);
+    const allFlagsSnap = await get(allFlagsRef);
+    let totalScore = 0;
+    
+    // Sum up points from active flags only
+    if (allFlagsSnap.exists()) {
+      allFlagsSnap.forEach(childSnap => {
+        const flag = childSnap.val();
+        // Only count active flags (not resolved or dismissed)
+        if (flag.status === 'active') {
+          totalScore += (flag.points || 0);
+        }
+      });
+    }
+    
+    // Determine status based on total score
+    const newStatus = totalScore > 300 ? 'suspended' 
+      : totalScore > 150 ? 'restricted' 
+      : totalScore > 50 ? 'monitored' 
+      : 'good';
+    
+    // Update account with recalculated score and status
+    const accountRef = ref(db, `${accountPath}/${accountId}`);
+    await update(accountRef, {
+      flagScore: totalScore,
+      flagStatus: newStatus
+    });
+    
+    return { totalScore, newStatus };
+  } catch (error) {
+    console.error('Error recalculating flag score:', error);
+    throw error;
+  }
+}
+
 // Load all accounts with their flag status
 function loadFlaggedAccounts() {
   allAccounts = [];
@@ -768,38 +810,24 @@ window.resolveSpecificFlag = async function(accountId, accountType, flagId) {
   
   try {
     const flagCollectionPath = accountType === 'driver' ? 'driverFlags' : 'userFlags';
-    const accountPath = accountType === 'driver' ? 'drivers' : 'users';
     const flagRef = ref(db, `${flagCollectionPath}/${accountId}/${flagId}`);
     
-    // Get flag data to subtract points
+    // Get flag data
     const flagSnap = await get(flagRef);
     if (!flagSnap.exists()) {
       showMessage('Flag not found', 'error');
       return;
     }
     
-    const flag = flagSnap.val();
-    
-    // Update flag status
+    // Update flag status to resolved
     await update(flagRef, {
       status: 'resolved',
       resolvedDate: Date.now(),
       resolvedBy: 'Admin'
     });
     
-    // Update account score
-    const accountRef = ref(db, `${accountPath}/${accountId}`);
-    const accountSnap = await get(accountRef);
-    if (accountSnap.exists()) {
-      const account = accountSnap.val();
-      const newScore = Math.max(0, (account.flagScore || 0) - (flag.points || 0));
-      const newStatus = newScore > 300 ? 'suspended' : newScore > 150 ? 'restricted' : newScore > 50 ? 'monitored' : 'good';
-      
-      await update(accountRef, {
-        flagScore: newScore,
-        flagStatus: newStatus
-      });
-    }
+    // Recalculate total flag score from all active flags
+    await recalculateFlagScore(accountId, accountType);
     
     showMessage('Flag resolved successfully', 'success');
     closeAccountModal();
@@ -822,7 +850,6 @@ window.escalateSpecificFlag = async function(accountId, accountType, flagId) {
   
   try {
     const flagCollectionPath = accountType === 'driver' ? 'driverFlags' : 'userFlags';
-    const accountPath = accountType === 'driver' ? 'drivers' : 'users';
     const flagRef = ref(db, `${flagCollectionPath}/${accountId}/${flagId}`);
     
     // Get current flag
@@ -837,25 +864,14 @@ window.escalateSpecificFlag = async function(accountId, accountType, flagId) {
                        flag.severity === 'high' ? 'critical' : 'critical';
     const additionalPoints = 25;
     
-    // Update flag
+    // Update flag with new severity and points
     await update(flagRef, {
       severity: newSeverity,
       points: (flag.points || 0) + additionalPoints
     });
     
-    // Update account score
-    const accountRef = ref(db, `${accountPath}/${accountId}`);
-    const accountSnap = await get(accountRef);
-    if (accountSnap.exists()) {
-      const account = accountSnap.val();
-      const newScore = (account.flagScore || 0) + additionalPoints;
-      const newStatus = newScore > 300 ? 'suspended' : newScore > 150 ? 'restricted' : newScore > 50 ? 'monitored' : 'good';
-      
-      await update(accountRef, {
-        flagScore: newScore,
-        flagStatus: newStatus
-      });
-    }
+    // Recalculate total flag score from all active flags
+    await recalculateFlagScore(accountId, accountType);
     
     showMessage('Flag escalated successfully', 'success');
     closeAccountModal();
@@ -880,11 +896,15 @@ window.dismissSpecificFlag = async function(accountId, accountType, flagId) {
     const flagCollectionPath = accountType === 'driver' ? 'driverFlags' : 'userFlags';
     const flagRef = ref(db, `${flagCollectionPath}/${accountId}/${flagId}`);
     
+    // Update flag status to dismissed
     await update(flagRef, {
       status: 'dismissed',
       dismissedDate: Date.now(),
       dismissedBy: 'Admin'
     });
+    
+    // Recalculate total flag score from all active flags
+    await recalculateFlagScore(accountId, accountType);
     
     showMessage('Flag dismissed successfully', 'success');
     closeAccountModal();
@@ -908,26 +928,18 @@ window.resolveFlag = async function() {
   if (!confirmed) return;
   
   try {
-    const accountPath = selectedFlag.accountType === 'driver' ? 'drivers' : 'users';
     const flagCollectionPath = selectedFlag.accountType === 'driver' ? 'driverFlags' : 'userFlags';
     const flagRef = ref(db, `${flagCollectionPath}/${selectedFlag.accountId}/${selectedFlag.flagId}`);
     
+    // Update flag status to resolved
     await update(flagRef, {
       status: 'resolved',
       resolvedDate: Date.now(),
       resolvedBy: 'Admin'
     });
     
-    // Update flag score
-    const accountRef = ref(db, `${accountPath}/${selectedFlag.accountId}`);
-    const snapshot = await get(accountRef);
-    const account = snapshot.val();
-    const newScore = Math.max(0, (account.flagScore || 0) - (selectedFlag.points || 0));
-    
-    await update(accountRef, {
-      flagScore: newScore,
-      flagStatus: newScore > 300 ? 'suspended' : newScore > 150 ? 'restricted' : newScore > 50 ? 'monitored' : 'good'
-    });
+    // Recalculate total flag score from all active flags
+    await recalculateFlagScore(selectedFlag.accountId, selectedFlag.accountType);
     
     showMessage('Flag resolved successfully', 'success');
     closeFlagDetails();
@@ -950,7 +962,6 @@ window.escalateFlag = async function() {
   if (!confirmed) return;
   
   try {
-    const accountPath = selectedFlag.accountType === 'driver' ? 'drivers' : 'users';
     const flagCollectionPath = selectedFlag.accountType === 'driver' ? 'driverFlags' : 'userFlags';
     const flagRef = ref(db, `${flagCollectionPath}/${selectedFlag.accountId}/${selectedFlag.flagId}`);
     
@@ -958,21 +969,14 @@ window.escalateFlag = async function() {
                        selectedFlag.severity === 'high' ? 'critical' : 'critical';
     const additionalPoints = 25;
     
+    // Update flag with new severity and points
     await update(flagRef, {
       severity: newSeverity,
       points: (selectedFlag.points || 0) + additionalPoints
     });
     
-    // Update flag score
-    const accountRef = ref(db, `${accountPath}/${selectedFlag.accountId}`);
-    const snapshot = await get(accountRef);
-    const account = snapshot.val();
-    const newScore = (account.flagScore || 0) + additionalPoints;
-    
-    await update(accountRef, {
-      flagScore: newScore,
-      flagStatus: newScore > 300 ? 'suspended' : newScore > 150 ? 'restricted' : newScore > 50 ? 'monitored' : 'good'
-    });
+    // Recalculate total flag score from all active flags
+    await recalculateFlagScore(selectedFlag.accountId, selectedFlag.accountType);
     
     showMessage('Flag escalated successfully', 'success');
     closeFlagDetails();
@@ -995,14 +999,18 @@ window.dismissFlag = async function() {
   if (!confirmed) return;
   
   try {
-    const accountPath = selectedFlag.accountType === 'driver' ? 'drivers' : 'users';
-    const flagRef = ref(db, `${accountPath}/${selectedFlag.accountId}/flags/${selectedFlag.flagId}`);
+    const flagCollectionPath = selectedFlag.accountType === 'driver' ? 'driverFlags' : 'userFlags';
+    const flagRef = ref(db, `${flagCollectionPath}/${selectedFlag.accountId}/${selectedFlag.flagId}`);
     
+    // Update flag status to dismissed
     await update(flagRef, {
       status: 'dismissed',
       dismissedDate: Date.now(),
       dismissedBy: 'Admin'
     });
+    
+    // Recalculate total flag score from all active flags
+    await recalculateFlagScore(selectedFlag.accountId, selectedFlag.accountType);
     
     showMessage('Flag dismissed successfully', 'success');
     closeFlagDetails();

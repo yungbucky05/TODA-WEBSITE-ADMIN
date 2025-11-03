@@ -13,6 +13,10 @@ The flagged accounts system automatically monitors user behavior and applies res
 - **Restricted** (151-300 pts) ⚠️ - Limited features
 - **Suspended** (301+ pts) 🚫 - Blocked access
 
+### ✅ Admin Panel Update (November 4, 2025)
+
+The admin panel now **properly recalculates flag scores** when resolving, dismissing, or escalating flags. It sums up all active flags instead of using simple arithmetic, ensuring accuracy and consistency with the mobile app's calculation method.
+
 ---
 
 ## 🗄️ Database Structure
@@ -119,6 +123,8 @@ function monitorDriverFlagStatus(driverId) {
     const driver = snapshot.val();
     
     if (driver) {
+      // Note: flagScore is now automatically recalculated by admin panel
+      // when flags are resolved, dismissed, or escalated
       const flagScore = driver.flagScore || 0;
       const flagStatus = driver.flagStatus || 'good';
       
@@ -139,8 +145,15 @@ function monitorDriverFlags(driverId) {
     const flags = snapshot.val() || {};
     const activeFlags = Object.values(flags).filter(f => f.status === 'active');
     
+    // Calculate total score from active flags (for verification/display)
+    // This matches the admin panel's recalculation method
+    const totalScore = activeFlags.reduce((sum, flag) => sum + (flag.points || 0), 0);
+    
+    // Optional: Verify against stored flagScore
+    // (Should match, as admin panel now recalculates correctly)
+    
     // Display flags in UI
-    displayDriverFlags(activeFlags);
+    displayDriverFlags(activeFlags, totalScore);
   });
 }
 ```
@@ -210,7 +223,7 @@ function updateDriverUI(status, score) {
 ### **3. Display Active Flags**
 
 ```javascript
-function displayDriverFlags(activeFlags) {
+function displayDriverFlags(activeFlags, totalScore) {
   const flagMessages = {
     'LOW_CONTRIBUTIONS': '💰 Low Contributions - Please increase your weekly contributions',
     'INACTIVE_ACCOUNT': '😴 Inactive Account - Log in regularly to maintain good standing',
@@ -224,6 +237,12 @@ function displayDriverFlags(activeFlags) {
     return;
   }
   
+  // Calculate status based on total score
+  const status = totalScore > 300 ? 'suspended' 
+    : totalScore > 150 ? 'restricted' 
+    : totalScore > 50 ? 'monitored' 
+    : 'good';
+  
   // Create flag list UI
   const flagsHTML = activeFlags.map(flag => `
     <div class="flag-item ${flag.severity}">
@@ -234,11 +253,22 @@ function displayDriverFlags(activeFlags) {
       </div>
       <p class="flag-message">${flagMessages[flag.type] || 'Please improve this area'}</p>
       ${flag.details ? `<p class="flag-details">${JSON.stringify(flag.details)}</p>` : ''}
+      ${flag.status === 'resolved' ? `<span class="flag-resolved">✅ Resolved</span>` : ''}
     </div>
   `).join('');
   
+  // Display total score and status
+  const headerHTML = `
+    <div class="flags-header">
+      <h3>Active Flags (${activeFlags.length})</h3>
+      <div class="score-badge ${status}">
+        Total: ${totalScore} points
+      </div>
+    </div>
+  `;
+  
   // Display in profile or dedicated flags screen
-  document.getElementById('active-flags-list').innerHTML = flagsHTML;
+  document.getElementById('active-flags-list').innerHTML = headerHTML + flagsHTML;
 }
 ```
 
@@ -291,6 +321,8 @@ function monitorCustomerFlagStatus(userId) {
     const user = snapshot.val();
     
     if (user && user.userType === 'PASSENGER') {
+      // Note: flagScore is now automatically recalculated by admin panel
+      // when flags are resolved, dismissed, or escalated
       const flagScore = user.flagScore || 0;
       const flagStatus = user.flagStatus || 'good';
       
@@ -311,8 +343,12 @@ function monitorCustomerFlags(userId) {
     const flags = snapshot.val() || {};
     const activeFlags = Object.values(flags).filter(f => f.status === 'active');
     
+    // Calculate total score from active flags (for verification/display)
+    // This matches the admin panel's recalculation method
+    const totalScore = activeFlags.reduce((sum, flag) => sum + (flag.points || 0), 0);
+    
     // Display flags
-    displayCustomerFlags(activeFlags);
+    displayCustomerFlags(activeFlags, totalScore);
   });
 }
 ```
@@ -376,7 +412,7 @@ function updateCustomerUI(status, score) {
 ### **3. Display Active Flags**
 
 ```javascript
-function displayCustomerFlags(activeFlags) {
+function displayCustomerFlags(activeFlags, totalScore) {
   const flagMessages = {
     'NO_SHOW': '👻 No-Shows Detected - Please show up for your bookings',
     'NON_PAYMENT': '💸 Unpaid Booking - Please settle your outstanding payment',
@@ -388,6 +424,12 @@ function displayCustomerFlags(activeFlags) {
   if (activeFlags.length === 0) {
     return;
   }
+  
+  // Calculate status based on total score
+  const status = totalScore > 300 ? 'suspended' 
+    : totalScore > 150 ? 'restricted' 
+    : totalScore > 50 ? 'monitored' 
+    : 'good';
   
   const flagsHTML = activeFlags.map(flag => `
     <div class="customer-flag-item ${flag.severity}">
@@ -407,7 +449,17 @@ function displayCustomerFlags(activeFlags) {
     </div>
   `).join('');
   
-  document.getElementById('customer-flags-list').innerHTML = flagsHTML;
+  // Display total score and status
+  const headerHTML = `
+    <div class="flags-header">
+      <h3>Active Flags (${activeFlags.length})</h3>
+      <div class="score-badge ${status}">
+        Total: ${totalScore} points
+      </div>
+    </div>
+  `;
+  
+  document.getElementById('customer-flags-list').innerHTML = headerHTML + flagsHTML;
 }
 ```
 
@@ -702,10 +754,83 @@ Add these Firebase Realtime Database rules:
 
 ---
 
-## 📞 Contact
+## � Admin Panel Synchronization
 
-For questions about the flagged accounts system, contact the admin team or refer to the admin panel documentation.
+### **Flag Score Calculation Method**
+
+Both the mobile app and admin panel now use **identical calculation methods**:
+
+```javascript
+// Mobile App (Driver/Customer)
+const activeFlags = allFlags.filter(f => f.status === 'active');
+const totalScore = activeFlags.reduce((sum, flag) => sum + (flag.points || 0), 0);
+
+// Admin Panel (when resolving/dismissing/escalating flags)
+async function recalculateFlagScore(accountId, accountType) {
+  // 1. Fetch all flags
+  const allFlags = await getAllFlags(accountId, accountType);
+  
+  // 2. Sum only active flags
+  let totalScore = 0;
+  allFlags.forEach(flag => {
+    if (flag.status === 'active') {
+      totalScore += (flag.points || 0);
+    }
+  });
+  
+  // 3. Update account
+  await updateAccount(accountId, {
+    flagScore: totalScore,
+    flagStatus: calculateStatus(totalScore)
+  });
+}
+```
+
+### **Why This Matters**
+
+✅ **Consistency**: Both systems calculate scores the same way  
+✅ **Accuracy**: Always reflects the true sum of active flags  
+✅ **Real-time**: Mobile app sees updates immediately when admin resolves flags  
+✅ **Self-healing**: Any admin action recalculates the score from scratch
+
+### **Status Calculation**
+
+Both systems use these thresholds:
+- `totalScore > 300` → `suspended` 🔴
+- `totalScore > 150` → `restricted` 🟠
+- `totalScore > 50` → `monitored` 🟡
+- `else` → `good` 🟢
 
 ---
 
-**Last Updated:** November 4, 2025
+## 📊 Best Practices
+
+### **Mobile App Development**
+
+1. **Always calculate locally**: Don't rely solely on stored `flagScore`, recalculate from active flags for verification
+2. **Listen to both**: Monitor both the account record and the flags collection for real-time updates
+3. **Handle edge cases**: Account for missing or null values gracefully
+4. **Cache intelligently**: Store flag data locally but refresh on each app launch
+5. **Test all states**: Verify behavior in all four status levels
+
+### **Testing Checklist**
+
+- [ ] Verify score calculation matches admin panel
+- [ ] Test real-time updates when admin resolves flags
+- [ ] Confirm UI updates when flags change
+- [ ] Test restrictions for each status level
+- [ ] Verify notifications appear correctly
+- [ ] Test edge cases (no flags, all flags resolved)
+
+---
+
+## �📞 Contact
+
+For questions about the flagged accounts system, contact the admin team or refer to the admin panel documentation.
+
+See also: `FLAG_SCORE_RECALCULATION.md` for technical details on the admin panel implementation.
+
+---
+
+**Last Updated:** November 4, 2025  
+**Admin Panel Update:** Recalculation implemented ✅
