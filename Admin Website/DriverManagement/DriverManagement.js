@@ -1332,19 +1332,21 @@ window.assignRfid = async function() {
   try {
     const fullName = selectedDriver.driverName || `${selectedDriver.firstName || ''} ${selectedDriver.middleName || ''} ${selectedDriver.lastName || ''}`.trim() || 'Unknown';
     
-    // Update driver's RFID in Firebase
-    const driverRef = ref(db, `drivers/${selectedDriver.id}`);
-    await update(driverRef, {
-      rfidNumber: rfidNumber,
-      hasRfidAssigned: true,
-      needsRfidAssignment: false,
-      rfidAssignedAt: new Date().toISOString(),
-      rfidAssignedBy: 'Admin' // You can replace with actual admin name
-    });
+    // Update driver's RFID in Firebase using direct path updates
+    const updates = {};
+    updates[`drivers/${selectedDriver.id}/rfidNumber`] = rfidNumber;
+    updates[`drivers/${selectedDriver.id}/rfidUID`] = rfidNumber;
+    updates[`drivers/${selectedDriver.id}/hasRfidAssigned`] = true;
+    updates[`drivers/${selectedDriver.id}/needsRfidAssignment`] = false;
+    updates[`drivers/${selectedDriver.id}/rfidAssignedAt`] = new Date().toISOString();
+    updates[`drivers/${selectedDriver.id}/rfidAssignedBy`] = 'Admin';
+    
+    await update(ref(db), updates);
 
     // Log audit action
     await logAuditAction('Driver Management', 'Assign RFID', fullName, selectedDriver.id, {
-      rfidNumber: rfidNumber
+      rfidNumber: rfidNumber,
+      rfidUID: rfidNumber
     });
 
     showMessage('RFID assigned successfully!', 'success');
@@ -1637,26 +1639,26 @@ window.confirmReassignRfid = async function() {
       mappedBy: 'Admin'
     });
 
-    // Update driver's RFID in Firebase
-    const driverRef = ref(db, `drivers/${reassignDriverData.id}`);
+    // Update driver's RFID in Firebase using direct path updates
+    const updates = {};
+    updates[`drivers/${reassignDriverData.id}/rfidNumber`] = newRfidNumber;
+    updates[`drivers/${reassignDriverData.id}/rfidUID`] = newRfidNumber;
+    updates[`drivers/${reassignDriverData.id}/rfidReassignedAt`] = timestamp;
+    updates[`drivers/${reassignDriverData.id}/rfidReassignedBy`] = 'Admin';
+    updates[`drivers/${reassignDriverData.id}/previousRfid`] = currentRfid;
+    updates[`drivers/${reassignDriverData.id}/rfidReassignmentCount`] = (reassignDriverData.rfidReassignmentCount || 0) + 1;
+    updates[`drivers/${reassignDriverData.id}/needsRfidAssignment`] = false;
+    updates[`drivers/${reassignDriverData.id}/rfidMissing`] = false;
+    updates[`drivers/${reassignDriverData.id}/rfidReported`] = false;
+    updates[`drivers/${reassignDriverData.id}/rfidReportedMissingAt`] = null;
     
-    await update(driverRef, {
-      rfidNumber: newRfidNumber,
-      rfidReassignedAt: timestamp,
-      rfidReassignedBy: 'Admin',
-      previousRfid: currentRfid,
-      rfidReassignmentCount: (reassignDriverData.rfidReassignmentCount || 0) + 1,
-      // Clear RFID missing flags
-      needsRfidAssignment: false,
-      rfidMissing: false,
-      rfidReported: false,
-      rfidReportedMissingAt: null
-    });
+    await update(ref(db), updates);
 
     // Log audit action
     await logAuditAction('Driver Management', 'Reassign RFID', fullName, reassignDriverData.id, {
       oldRfid: currentRfid,
       newRfid: newRfidNumber,
+      rfidUID: newRfidNumber,
       reason: 'RFID card lost/replaced',
       historyCount: (reassignDriverData.rfidReassignmentCount || 0) + 1
     });
