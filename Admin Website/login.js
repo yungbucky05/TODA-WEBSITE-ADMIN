@@ -82,6 +82,12 @@ document.addEventListener('DOMContentLoaded', async function() {
   const errorMessage = document.getElementById('errorMessage');
   const rememberMeCheckbox = document.getElementById('rememberMe');
 
+  // Check if user just logged out and show notification
+  if (sessionStorage.getItem('justLoggedOut') === 'true') {
+    sessionStorage.removeItem('justLoggedOut');
+    showSuccess('You have been logged out successfully');
+  }
+
   // Test Firebase connection on page load (informational only)
   testFirebaseConnection().then(isConnected => {
     if (isConnected) {

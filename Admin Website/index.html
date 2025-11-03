@@ -117,6 +117,20 @@
 
       <!-- Page Content -->
       <div class="page-content">
+        <!-- Stats Header with Timeframe Selector -->
+        <div class="stats-header">
+          <h2 class="stats-title">📊 Statistics Overview</h2>
+          <div class="timeframe-selector">
+            <label for="timeframeSelect" class="timeframe-label">📅 Timeframe:</label>
+            <select id="timeframeSelect" class="timeframe-dropdown">
+              <option value="today">Today</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="all" selected>All Time</option>
+            </select>
+          </div>
+        </div>
+
         <!-- Stats Cards -->
         <div class="stats-grid">
           <div class="stat-card blue">

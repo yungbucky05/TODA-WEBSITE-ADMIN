@@ -1002,20 +1002,27 @@ window.handleReject = async function() {
 window.handleTodaAssignment = async function() {
   if (!selectedDriver) return;
 
-  let todaNumber = document.getElementById('todaNumberInput').value.trim().toUpperCase();
+  let todaInput = document.getElementById('todaNumberInput').value.trim();
 
-  if (!todaNumber) {
+  if (!todaInput) {
     showMessage('Please enter a TODA number', 'warning');
     return;
   }
 
-  // Auto-format to TODA-XXX if user just enters numbers
-  if (/^\d+$/.test(todaNumber)) {
-    todaNumber = `TODA-${todaNumber.padStart(3, '0')}`;
-  } else if (!/^TODA-\d+$/.test(todaNumber)) {
-    showMessage('Please enter a valid TODA number (e.g., TODA-001 or just 001)', 'warning');
+  // Extract just the number part (remove TODA- prefix if present)
+  let todaNumber = todaInput;
+  if (todaInput.toUpperCase().startsWith('TODA-')) {
+    todaNumber = todaInput.substring(5); // Remove "TODA-" prefix
+  }
+
+  // Validate that it's a number
+  if (!/^\d+$/.test(todaNumber)) {
+    showMessage('Please enter a valid TODA number (e.g., 001)', 'warning');
     return;
   }
+
+  // Pad with zeros if needed (e.g., 1 becomes 001)
+  todaNumber = todaNumber.padStart(3, '0');
 
   // Check if TODA number is already assigned
   const existingDriver = allDrivers.find(d => d.todaNumber === todaNumber && d.id !== selectedDriver.id);
@@ -1028,7 +1035,7 @@ window.handleTodaAssignment = async function() {
   try {
     const fullName = selectedDriver.driverName || `${selectedDriver.firstName || ''} ${selectedDriver.middleName || ''} ${selectedDriver.lastName || ''}`.trim() || 'Unknown';
     
-    // Update driver's TODA number in Firebase
+    // Update driver's TODA number in Firebase (store just the number)
     const driverRef = ref(db, `drivers/${selectedDriver.id}`);
     await update(driverRef, {
       todaNumber: todaNumber,

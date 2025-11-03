@@ -109,11 +109,12 @@ document.getElementById('logoutBtn')?.addEventListener('click', async () => {
     // Clear any session data
     sessionStorage.clear();
     localStorage.clear();
-    showMessage('Logged out successfully', 'success');
-    // Reload page or redirect to login after a short delay
-    setTimeout(() => {
-      window.location.reload();
-    }, 1000);
+    
+    // Set logout flag for login page notification
+    sessionStorage.setItem('justLoggedOut', 'true');
+    
+    // Redirect to login page
+    window.location.href = 'login.html';
   }
 });
 
@@ -369,8 +370,18 @@ async function initializeDashboard() {
     // Start listening to notifications
     listenToNotifications();
     
-    // Load statistics
-    loadStats();
+    // Load statistics with default timeframe
+    loadStats('all');
+    
+    // Add timeframe selector event listener
+    const timeframeSelect = document.getElementById('timeframeSelect');
+    if (timeframeSelect) {
+      timeframeSelect.addEventListener('change', (e) => {
+        const selectedTimeframe = e.target.value;
+        loadStats(selectedTimeframe);
+        showMessage(`Statistics updated for ${e.target.selectedOptions[0].text}`, 'info');
+      });
+    }
     
     // Listen for pending discount applications
     const discountRef = ref(db, 'users');
@@ -402,33 +413,101 @@ async function initializeDashboard() {
 }
 
 // Load dashboard statistics
-function loadStats() {
-  // Load drivers count
+function loadStats(timeframe = 'all') {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfWeek = new Date(now.getTime() - (now.getDay() * 24 * 60 * 60 * 1000)).setHours(0, 0, 0, 0);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+  // Helper function to check if timestamp is within timeframe
+  function isWithinTimeframe(timestamp) {
+    if (!timestamp || timeframe === 'all') return true;
+    
+    let time;
+    
+    // Handle different timestamp formats
+    if (typeof timestamp === 'string') {
+      // Check if it's a date string (YYYY-MM-DD) or timestamp string
+      if (timestamp.includes('-') && timestamp.length === 10) {
+        // Date format like "2025-08-26"
+        time = new Date(timestamp).getTime();
+      } else if (timestamp.includes('T') || timestamp.includes('Z')) {
+        // ISO date string like "2025-10-30T13:27:14.161Z"
+        time = new Date(timestamp).getTime();
+      } else {
+        // Timestamp string in seconds like "1756208451"
+        time = parseInt(timestamp) * 1000; // Convert seconds to milliseconds
+      }
+    } else if (typeof timestamp === 'number') {
+      // Check if it's in seconds or milliseconds
+      // Timestamps in milliseconds are much larger (13 digits vs 10 digits)
+      time = timestamp > 10000000000 ? timestamp : timestamp * 1000;
+    } else {
+      return true; // Can't parse, include it
+    }
+    
+    switch(timeframe) {
+      case 'today':
+        return time >= startOfToday;
+      case 'week':
+        return time >= startOfWeek;
+      case 'month':
+        return time >= startOfMonth;
+      default:
+        return true;
+    }
+  }
+
+  // Load drivers count (only verified drivers)
   const driversRef = ref(db, 'drivers');
   onValue(driversRef, (snapshot) => {
-    const count = snapshot.exists() ? Object.keys(snapshot.val()).length : 0;
+    let count = 0;
+    if (snapshot.exists()) {
+      const drivers = snapshot.val();
+      Object.keys(drivers).forEach(key => {
+        const driver = drivers[key];
+        // Count verified drivers, filter by verification date for timeframe
+        if (driver.verificationStatus === 'verified') {
+          if (timeframe === 'all' || isWithinTimeframe(driver.verifiedAt || driver.registrationDate)) {
+            count++;
+          }
+        }
+      });
+    }
     document.getElementById('totalDrivers').textContent = count;
   });
 
-  // Load bookings count
+  // Load bookings count with timeframe filter
   const bookingsRef = ref(db, 'bookings');
   onValue(bookingsRef, (snapshot) => {
-    const count = snapshot.exists() ? Object.keys(snapshot.val()).length : 0;
+    let count = 0;
+    if (snapshot.exists()) {
+      const bookings = snapshot.val();
+      Object.keys(bookings).forEach(key => {
+        const booking = bookings[key];
+        // Use timestamp field from bookings
+        if (isWithinTimeframe(booking.timestamp)) {
+          count++;
+        }
+      });
+    }
     document.getElementById('totalBookings').textContent = count;
   });
 
-  // Load contributions total
+  // Load contributions total with timeframe filter
   const contributionsRef = ref(db, 'contributions');
   onValue(contributionsRef, (snapshot) => {
     if (snapshot.exists()) {
       const contributions = snapshot.val();
       let total = 0;
-      let count = 0;
       
       Object.keys(contributions).forEach(key => {
-        const amount = parseFloat(contributions[key].amount) || 0;
-        total += amount;
-        count++;
+        const contribution = contributions[key];
+        // Use timestamp field (which is in seconds as a string)
+        if (isWithinTimeframe(contribution.timestamp)) {
+          const amount = parseFloat(contribution.amount) || 0;
+          total += amount;
+        }
       });
       
       document.getElementById('totalContributions').textContent = `₱${total.toFixed(2)}`;
@@ -437,7 +516,7 @@ function loadStats() {
     }
   });
 
-  // Load queue count
+  // Load queue count (always today's queue)
   const queueRef = ref(db, 'driverQueue');
   onValue(queueRef, (snapshot) => {
     const count = snapshot.exists() ? Object.keys(snapshot.val()).length : 0;
